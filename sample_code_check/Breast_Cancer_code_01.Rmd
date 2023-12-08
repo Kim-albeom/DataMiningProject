@@ -1,112 +1,82 @@
 ---
-title: "Untitled"
+title: "Breast_Cancer_code_01"
 output: html_document
-date: "2023-12-07"
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-# %% [code]
----
-title: "Binary Classification of Breast Cancer & Visualization for Doctor"
-author: "Miri Choi"
-date: "February 24, 2018"
-output: 
-    html_document:
-        toc: yes
-        theme: cosmo
-        highlight: tango
-        code_folding: hide
-        fig_width: 12
-        fig_height: 8
----
-
-
-## 1. Intro & Purpose
-Hello, Kagglers!
-
-This is my first project since I’ve learned R.
-
-I’ve been studying R around a month, still many things to discover and learn.
- 
-Big welcome if you suggest to me about new ML techniques. 
-
-It will be amazing to hear the different ideas to solve the problems with various perspective!
-
-
-In summary, I used many classification methods in this kernel.
-I hope this kernel will be helpful to beginner in this area! 
-
-For better understanding each function, I’ve wrote library right above the function.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 ```
 
+## 1. Intro & Purpose
 
----
+요약하자면, 나는 이 커널에서 많은 분류 방법을 사용했습니다.
+이 커널이 이 분야의 초보자에게 도움이 되기를 바랍니다!
 
-
+각 함수를 더 잘 이해하기 위해 함수 바로 위에 라이브러리를 작성했습니다.
 
 ## 2. Data Importing & Cleaning & Inspecting
 ### 2-1) Import dataset
-wbcd means 'wisconsin breast cancer data'
+breast_cancer_data means 'wisconsin breast cancer data'
 ```{r}
-wbcd <- read.csv("../input/data.csv", header=T, stringsAsFactors=F)
-```
+breast_cancer_data <- read.csv("./data/breast_cancer.csv", header=T, stringsAsFactors=F)
 
+tail(breast_cancer_data)
+```
 
 ### 2-2) Remove NULL Data
 ```{r}
-wbcd$X <- NULL
+breast_cancer_data$X <- NULL
 ```
 
 ### 2-3) Reshape the datasets
 ```{r}
-wbcd <- wbcd[,-1]
-wbcd$diagnosis <- factor(ifelse(wbcd$diagnosis=="B","Benign","Malignant"))
+# breast_cancer_data 첫 번째 열을 제외한 모든 열로 구성
+breast_cancer_data <- breast_cancer_data[,-1]
+
+# breast_cancer_data$diagnosis의 각 값이 "B"인지 확인하고, 
+#"B"이면 "Benign"으로, 그렇지 않으면 "Malignant"으로 변환
+breast_cancer_data$diagnosis <- factor(ifelse(breast_cancer_data$diagnosis=="B","Benign","Malignant"))
 ```
 
 ### 2-4) Inspect the datasets {.tabset}
 #### structure
 ```{r}
-str(wbcd)
+str(breast_cancer_data)
 ```
 
 #### summary
 ```{r}
-summary(wbcd)
+summary(breast_cancer_data)
 ```
 
 #### head
 ```{r}
-knitr::kable(head(wbcd))
+tail(breast_cancer_data)
 ```
-
 
 ---
 
 
-
-
 ## 3. Analyze the Correlation between variables
 ### 3-1) Correlation between each variables {.tabset}
-There are many ways to draw a correalation plot!
+correalation plot를 그리는 여러 가지 방법
 
-For practice, I applied different function to each data (mean, se, worst)
+각 데이터에 서로 다른 함수(mean, se, worst)를 적용해봤음
 
 #### Mean
+
 ```{r}
-library(PerformanceAnalytics)
-chart.Correlation(wbcd[,c(2:11)],histogram=TRUE, col="grey10", pch=1, main="Cancer Mean")
+# suppressWarnings() : 경고메세지 무시
+suppressWarnings({
+  library(PerformanceAnalytics)
+  chart.Correlation(breast_cancer_data[,c(2:11)],histogram=TRUE, col="grey10", pch=1, main="Cancer Mean")
+})
 ```
 
 #### SE
 ```{r}
 library(psych)
-pairs.panels(wbcd[,c(12:21)], method="pearson",
+pairs.panels(breast_cancer_data[,c(12:21)], method="pearson",
              hist.col = "#1fbbfa", density=TRUE, ellipses=TRUE, show.points = TRUE,
              pch=1, lm=TRUE, cex.cor=1, smoother=F, stars = T, main="Cancer SE")
 ```
@@ -115,38 +85,32 @@ pairs.panels(wbcd[,c(12:21)], method="pearson",
 ```{r}
 library(ggplot2)
 library(GGally)
-ggpairs(wbcd[,c(22:31)],)+ theme_bw()+
+ggpairs(breast_cancer_data[,c(22:31)],)+ theme_bw()+
 labs(title="Cancer Worst")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=13))
 ```
 
 
-
 ### 3-2) See the relation between each variables (diagnosis included) {.tabset}
-I think viewing plot with diagnosis included is much more important than combined data[3-1].
-
-```{r}
-library(ggplot2)
-library(GGally)
-```
+combined data보다 diagnosis가 포함된 플롯을 보는 것이 훨씬 더 중요하다고 생각[3-1]
 
 #### Mean
 ```{r}
-ggpairs(wbcd[,c(2:11,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
+ggpairs(breast_cancer_data[,c(2:11,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
 labs(title="Cancer Mean")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ```
 
 #### SE
 ```{r}
-ggpairs(wbcd[,c(12:21,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
+ggpairs(breast_cancer_data[,c(12:21,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
 labs(title="Cancer SE")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ```
 
 #### Worst
 ```{r}
-ggpairs(wbcd[,c(22:31,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
+ggpairs(breast_cancer_data[,c(22:31,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
 labs(title="Cancer Worst")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ```
@@ -158,7 +122,7 @@ By ggcorr, we can see the correlation value more directly than above graph.
 
 #### Mean
 ```{r}
-ggcorr(wbcd[,c(2:11)], name = "corr", label = TRUE)+
+ggcorr(breast_cancer_data[,c(2:11)], name = "corr", label = TRUE)+
   theme(legend.position="none")+
 labs(title="Cancer Mean")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
@@ -167,7 +131,7 @@ theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 
 #### SE
 ```{r}
-ggcorr(wbcd[,c(12:21)], name = "corr", label = TRUE)+
+ggcorr(breast_cancer_data[,c(12:21)], name = "corr", label = TRUE)+
   theme(legend.position="none")+
 labs(title="Cancer SE")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
@@ -176,7 +140,7 @@ theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 
 #### Worst
 ```{r}
-ggcorr(wbcd[,c(22:31)], name = "corr", label = TRUE)+
+ggcorr(breast_cancer_data[,c(22:31)], name = "corr", label = TRUE)+
   theme(legend.position="none")+
 labs(title="Cancer Worst")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
@@ -186,76 +150,75 @@ theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ---
 
 
-
-
 ## 4. Principal Component Analysis (PCA)
 
-Too many variables can cause such problems below
+변수가 너무 많으면 아래와 같은 문제가 발생할 수 있습니다.
 
-- Increased computer throughput
+- 컴퓨터 처리량 증가
 
-- Too complex visualization problems
+- 너무 복잡한 시각화 문제
 
-- Decrease efficiency by including variables that have no effect on the analysis
+- 분석에 영향을 주지 않는 변수를 포함시켜 효율성을 떨어뜨림
 
-- Make data interpretation difficult
+- 데이터 해석을 어렵게 만든다
 
 
-If you see the ggcorr plot above[3-3], high correlation value means it has "multicollinearity" between variables.
+위의 ggcorr 플롯을 보면 [3-3] 상관관계 값이 높다는 것은 변수 간에 "다중 공선성"이 있음을 의미합니다.
 
--> Use one main component for model development by reduct the variables with high correlation.
+-> 상관관계가 높은 변수를 줄여 하나의 주요 구성요소를 모델 개발에 사용합니다.
 
-**When determining the number of principal components, 
-use the cumulative contribution rate 
-or use a screeplot and use the previous step of the principal component where the eigenvalue curve lies horizontally.
+**주성분의 수를 결정할 때,
+누적 기여율을 사용
+또는 screeplot을 사용하고 고유값 곡선이 수평으로 놓여 있는 주성분의 이전 단계를 사용합니다.
 
-PCA uses standardized data so that it can avoid data distortion caused by scale difference.
+PCA는 스케일 차이로 인한 데이터 왜곡을 방지하기 위해 표준화된 데이터를 사용합니다.
+
 ```{r}
 library(factoextra)
-wbcd_pca <- transform(wbcd)	
+breast_cancer_pca <- transform(breast_cancer_data)	
 ```
 
 ### 4-1) Summary {.tabset}
-In the results of PCA, if the cumulative proportion is 85% or above, it can be determined by the number of principal components.
+PCA 결과 Cumulative Proportion(누적비율)율이 85% 이상이면 number of principal components(주성분의 수)로 판단할 수 있다.
 
-* View Point : Cumulative Proportion
+* View Point(시점) : Cumulative Proportion
 
-For example, if cumulative proportion of PC4 is 88.7, it means **the sum of proportion of PC1~PC4** is 88.7!
+For example, if cumulative proportion of PC4 is 88.7, it means **the sum of proportion of PC1~PC4** is 88.7
 
 
 #### All
-The cumulative proportion from PC1 to PC6 is about 88.7%. (above 85%)
+The cumulative proportion from PC1 to PC6 is about 88.7%. (85%이상)
 
 It means that PC1~PC6 can explain 88.7% of the whole data.
 ```{r}
-all_pca <- prcomp(wbcd_pca[,-1], cor=TRUE, scale = TRUE)
+all_pca <- prcomp(breast_cancer_pca[,-1], cor=TRUE, scale = TRUE)
 summary(all_pca)
 ```
 
 #### Mean
 The cumulative proportion from PC1 to PC3 is about 88.7%. (above 85%)
 ```{r}
-mean_pca <- prcomp(wbcd_pca[,c(2:11)], scale = TRUE)
+mean_pca <- prcomp(breast_cancer_pca[,c(2:11)], scale = TRUE)
 summary(mean_pca)
 ```
 
 #### SE
 The cumulative proportion from PC1 to PC4 is about 86.7%. (above 85%)
 ```{r}
-se_pca <- prcomp(wbcd_pca[,c(12:21)], scale = TRUE)
+se_pca <- prcomp(breast_cancer_pca[,c(12:21)], scale = TRUE)
 summary(se_pca)
 ```
 
 #### Worst
 The cumulative proportion from PC1 to PC3 is about 85.8%. (above 85%)
 ```{r}
-worst_pca <- prcomp(wbcd_pca[,c(22:31)], scale = TRUE)
+worst_pca <- prcomp(breast_cancer_pca[,c(22:31)], scale = TRUE)
 summary(worst_pca)
 ```
 
 
 ### 4-2) Screeplot {.tabset}
-The percentage of variability explained by the principal components can be ascertained through screeplot.
+principal components(주성분)으로 설명되는 The percentage of variability(변동성의 백분율)은 screeplot를 통해 확인할수 있음
 
 => View Point : principal components where the line lies.
 
@@ -407,7 +370,7 @@ grid.arrange(p1,p2,ncol=2)
 
 
 ### 4-4) See the plot - color variables by groups {.tabset}
-value centers : put the optimal principal component value that we chosen above.
+value centers : 위에서 선택한 optimal principal component 값을 넣음
 
 #### All
 optimal PC value : PC1~PC6
@@ -466,28 +429,28 @@ library("factoextra")
 ```
 #### All
 ```{r}
-fviz_pca_biplot(all_pca, col.ind = wbcd$diagnosis, col="black",
+fviz_pca_biplot(all_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
 
 #### Mean
 ```{r}
-fviz_pca_biplot(mean_pca, col.ind = wbcd$diagnosis, col="black",
+fviz_pca_biplot(mean_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
 
 #### SE
 ```{r}
-fviz_pca_biplot(se_pca, col.ind = wbcd$diagnosis, col="black",
+fviz_pca_biplot(se_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
 
 #### Worst
 ```{r}
-fviz_pca_biplot(worst_pca, col.ind = wbcd$diagnosis, col="black",
+fviz_pca_biplot(worst_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
@@ -496,20 +459,21 @@ fviz_pca_biplot(worst_pca, col.ind = wbcd$diagnosis, col="black",
 ---
 
 
-
-
-## 5. Apply every ML methods and compare each other and choose best fits
+## 5. 모든 ML 방법을 적용하고 서로 비교하여 가장 적합한 것을 선택합니다.
 ### 5-1) Make test & train dataset for testing classification ML methods
 Shuffle the wbcd data(100%) & Make train dataset(70%), test dataset(30%)
 
+분류 ML 방법 테스트를 위한 테스트 및 학습 데이터 세트 만들기
+wbcd 데이터 섞기(100%) & 기차 데이터세트 만들기(70%), 테스트 데이터세트(30%)
+
 ```{r}
-nrows <- NROW(wbcd)
+nrows <- NROW(breast_cancer_data)
 set.seed(218)				            ## fix random value
 index <- sample(1:nrows, 0.7 * nrows)	## shuffle and divide
 
 #train <- wbcd		        	        ## 569 test data (100%)
-train <- wbcd[index,]			        ## 398 test data (70%)
-test <- wbcd[-index,]  		            ## 171 test data (30%)
+train <- breast_cancer_data[index,]			        ## 398 test data (70%)
+test <- breast_cancer_data[-index,]  		            ## 171 test data (30%)
 ```
 
 
@@ -765,7 +729,7 @@ library(caret)
 learn_kmeans <- kmeans(train[,-1], centers=2)
 
 pre_kmeans <- predict.kmeans(test[,-1],learn_kmeans)
-pre_kmeans <- ifelse(pre_kmeans == 1,"Benign","Malignant")
+pre_kmeans <- as.factor(ifelse(pre_kmeans == 1,"Benign","Malignant"))
 cm_kmeans <- confusionMatrix(pre_kmeans, test$diagnosis)
 cm_kmeans
 ```
@@ -897,7 +861,7 @@ make sure your data format is same as below.
 
 ### 6-1) Import patient data {.tabset}
 ```{r}
-patient <- read.csv("../input/data.csv", header=T, stringsAsFactors=F)
+patient <- read.csv("./data/breast_cancer.csv", header=T, stringsAsFactors=F)
 patient$X <- NULL
 ```
 
@@ -925,9 +889,9 @@ B$diagnosis <- NULL
 
 
 
-## 7. Patient Cancer Diagnosis Prediction Function
-### 7-1) Patient Diagnosis Function
-Use 'Improve SVM Algorithm' as default, Since it's rated as the best predict_model.
+## 7.  환자의 암 진단 예측 Function
+### 7-1) 환자 진단 Function
+가장 좋은 예측 모델로 평가되었으므로 'Improve SVM Algorithm'을 기본으로 사용하세요.
 
 ```{r}
 # for print output
@@ -971,6 +935,8 @@ cancer_diagnosis_predict_p(M,learn_imp_c50)
 
 ### 7-3) Make Submission Output (use test dataset)
 ```{r}
+library(knitr)
+
 t <- patient[-index,]
 orgin <- t$diagnosis
 t$diagnosis <- NULL
@@ -1079,13 +1045,13 @@ res_mean
 ### 8-2) Testing Function {.tabset}
 #### Benign
 ```{r}
-cancer_summary(B, wbcd)
+cancer_summary(B, breast_cancer_data)
 ```
 
 
 #### Malignant
 ```{r}
-cancer_summary(M, wbcd)
+cancer_summary(M, breast_cancer_data)
 ```
 
 
@@ -1188,29 +1154,25 @@ res
 ### 9-2) Testing Function {.tabset}
 #### Benign
 ```{r}
-cancer_radar(B,wbcd)
+library(ggplot2)   
+
+cancer_radar(B,breast_cancer_data)
 ```
 
 
 #### Malignant
 ```{r}
-cancer_radar(M,wbcd)	
+cancer_radar(M,breast_cancer_data)	
 ```
 
 
 ---
 
-
-
 # 10. Conclusion
 
-I recently uploaded Python Version of this **wisconsin breast cancer dataset** with binary classification.
-Not using existed ML methods, Making Artifical Neural Network Model adjusted to this dataset.
+저는 최근에 이진 분류를 사용하여 이 **wisconsin breast cancer dataset**의 Python 버전을 업로드했습니다.
 
-- **Python Version** kernel, click [here](https://www.kaggle.com/mirichoi0218/ann-making-model-for-binary-classification)
+기존 ML 방법을 사용하지 않고 이 데이터 세트에 맞게 조정된 인공 신경망 모델을 만듭니다.
 
-Your upvotes, comments are fully welcomed! 
+- **Python Version**  [here](https://www.kaggle.com/mirichoi0218/ann-making-model-for-binary-classification)
 
-If you have any question about this project, feel free to ask me ;)
-
-Thank you for your time!
