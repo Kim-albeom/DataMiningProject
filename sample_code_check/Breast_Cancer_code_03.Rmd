@@ -1,0 +1,668 @@
+---
+title: "Breast_Cancer_code_03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Breast_cancer(유방암) analysis: Real Machine Learning
+
+This dataset can be found in this link: https://www.kaggle.com/uciml/breast-cancer-wisconsin-data
+
+특징은 유방 덩어리의 미세 바늘 흡인(FNA)의 디지털 이미지로부터 계산됩니다. 이는 이미지에 존재하는 세포핵의 특성을 설명합니다. n 3차원 공간은 [K. P. Bennett 및 O. L. Mangasarian: "두 개의 선형 분리 불가능한 세트의 강력한 선형 계획법 판별", Optimization Methods and Software 1, 1992, 23-34]
+
+
+이 데이터베이스는 UW CS FTP 서버(ftp ftp.cs.wisc.edu cd math-prog/cpo-dataset/machine-learn/WDBC/)를 통해서도 사용할 수 있습니다.
+
+UCI 기계 학습 저장소에서도 찾을 수 있음 https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29
+
+## 0. usage library
+설치 안된 라이브러리의 경우 설치 필요
+```{r}
+library(psych, warn.conflicts=F)
+library(data.table, warn.conflicts=F)
+library(ggplot2,warn.conflicts=F)
+library(plotly,warn.conflicts=F)
+library(expss,warn.conflicts=F)
+library(tidyverse,warn.conflicts=F)
+library(pander,warn.conflicts=F)
+library(forcats,warn.conflicts=F)
+library(stringr,warn.conflicts=F)
+library(caTools,warn.conflicts=F)
+library(VIM,warn.conflicts=F)
+library(caret,warn.conflicts=F)
+require(reshape2,warn.conflicts=F)
+library(GGally,warn.conflicts=F)
+library(corrplot,warn.conflicts=F)
+library(factoextra,warn.conflicts=F)
+library(gridExtra,warn.conflicts=F)
+library(C50,warn.conflicts=F)
+library(highcharter,warn.conflicts=F)
+library(rpart,warn.conflicts=F)
+library(e1071,warn.conflicts=F)
+library(ranger,warn.conflicts=F)
+library(epiR,warn.conflicts=F)
+library(randomForest,warn.conflicts=F)
+library(party,warn.conflicts=F)
+library(class,warn.conflicts=F)
+library(kknn,warn.conflicts=F) 
+library(gbm,warn.conflicts=F)
+library(ada,warn.conflicts=F)
+```
+
+## Step 1: Dataset
+
+데이터 세트 및 세부 정보는 여기에서 확인할 수 있습니다: https://www.kaggle.com/uciml/breast-cancer-wisconsin-data#data.csv
+
+Codeadd 마크다운 추가
+데이터세트에는 33개의 열이 있는데 한 개는 완전히 비어 있어서 제거했습니다.
+
+```{r}
+data <- read.csv("./data/breast_cancer.csv", header=T)
+str(data)
+data<-data[,-33]
+```
+
+### 변수 설명(31개)
+* id (ID 번호): 각 환자의 고유 식별 번호
+* diagnosis (진단): 유방 조직의 진단 결과 (M = malignant(악성), B = benign(양성))
+* radius_mean (반경 평균): 중심에서 둘레까지의 거리의 평균
+* texture_mean (질감 평균): gray-scale 값의 표준 편차
+* perimeter_mean (둘레 평균): 핵 종양의 평균 크기
+* area_mean (면적 평균): 핵 종양의 면적의 평균
+* smoothness_mean (매끄러움 평균): 반지름 길이의 지역 변동의 평균
+* compactness_mean (조그만함 평균): 둘레^2 / 면적 - 1.0의 평균
+* concavity_mean (오목함 평균): 등고선의 오목한 부분의 심각도의 평균
+* concave points_mean (오목한 지점 평균): 등고선의 오목한 부분의 수의 평균
+* symmetry_mean (대칭성 평균): 대칭성의 평균
+* fractal_dimension_mean (프랙탈 차원 평균): "coastline approximation(해안선 근사치)" - 1의 평균
+* radius_se (반경 표준 오차): 중심에서 둘레까지의 거리의 평균의 표준 오차
+* texture_se (질감 표준 오차): gray-scale 값의 표준 편차의 표준 오차
+* perimeter_se (둘레 표준 오차): 핵 종양의 평균 크기의 표준 오차
+* area_se (면적 표준 오차): 핵 종양의 면적의 표준 오차
+* smoothness_se (매끄러움 표준 오차): 반지름 길이의 지역 변동의 표준 오차
+* compactness_se (조그만함 표준 오차): 둘레^2 / 면적 - 1.0의 표준 오차
+* concavity_se (오목함 표준 오차): 등고선의 오목한 부분의 심각도의 표준 오차
+* concave points_se (오목한 지점 표준 오차): 등고선의 오목한 부분의 수의 표준 오차
+* symmetry_se (대칭성 표준 오차): 대칭성의 표준 오차
+* fractal_dimension_se (프랙탈 차원 표준 오차): "coastline approximation" - 1의 표준 오차
+* radius_worst (반경 최악): 중심에서 둘레까지의 거리의 평균의 최대값
+* texture_worst (질감 최악): gray-scale 값의 표준 편차의 최대값
+* perimeter_worst (둘레 최악): 핵 종양의 평균 크기의 최대값
+* area_worst (면적 최악): 핵 종양의 면적의 최대값
+* smoothness_worst (매끄러움 최악): 반지름 길이의 지역 변동의 최대값
+* compactness_worst (조그만함 최악): 둘레^2 / 면적 - 1.0의 최대값
+* concavity_worst (오목함 최악): 등고선의 오목한 부분의 심각도의 최대값
+* concave points_worst (오목한 지점 최악): 등고선의 오목한 부분의 수의 최대값
+* symmetry_worst (대칭성 최악): 대칭성의 최대값
+* fractal_dimension_worst (프랙탈 차원 최악): "coastline approximation" - 1의 최대값
+
+## Step 2: The endpoint
+
+* 종양이 양성인지 악성인지를 정확하게 분류할 수 있는 기계 학습 알고리즘을 설계합니다.
+
+## Step 3: Missing data
+
+* 누락된 데이터가 있는지 확인 -> 누락된 데이터가 없음
+
+```{r}
+missing_values <- data %>% summarize_all(funs(sum(is.na(.))/n()))
+
+missing_values <- gather(missing_values, key="feature", value="missing_pct")
+
+missing_values %>% 
+
+  ggplot(aes(x=reorder(feature,-missing_pct),y=missing_pct)) +
+
+  geom_bar(stat="identity",fill="red")+
+
+  coord_flip()+theme_bw()
+```
+
+* 누락된 데이터가 없어 패턴이 없습니다.
+
+```{r}
+aggr(data, prop = FALSE, combined = TRUE, numbers = TRUE, sortVars = TRUE, sortCombs = TRUE)
+```
+
+## Step 4: Target variable
+
+```{r}
+table(data$diagnosis)
+prop.table(table(data$diagnosis))*100
+```
+
+* Target variable 는 문자형 변수이므로 팩터로 변환하는 것을 권장
+
+```{r}
+data$diagnosis<-factor(data$diagnosis, labels=c('B','M'))
+prop.table(table(data$diagnosis))*100
+```
+
+## Step 5: Descriptive analysis
+
+```{r}
+psych::describeBy(data[3:32], group=data$diagnosis)
+```
+
+* 이 플롯은 일반적으로 악성 진단이 모든 변수에서 더 높은 점수를 갖는다는 것을 보여줍니다.
+
+```{r}
+#Mean
+df.m <- melt(data[,-c(1,13:32)], id.var = "diagnosis")
+p <- ggplot(data = df.m, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=diagnosis)) + facet_wrap( ~ variable, scales="free")+ xlab("Variables") + ylab("")+ guides(fill=guide_legend(title="Group"))
+p
+
+#Se
+df.m <- melt(data[,-c(1,3:12,23:32)], id.var = "diagnosis")
+p <- ggplot(data = df.m, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=diagnosis)) + facet_wrap( ~ variable, scales="free")+ xlab("Variables") + ylab("")+ guides(fill=guide_legend(title="Group"))
+p
+
+#Worst
+df.m <- melt(data[,c(2,23:32)], id.var = "diagnosis")
+p <- ggplot(data = df.m, aes(x=variable, y=value)) + 
+  geom_boxplot(aes(fill=diagnosis)) + facet_wrap( ~ variable, scales="free")+ xlab("Variables") + ylab("")+ guides(fill=guide_legend(title="Group"))
+p
+```
+
+## Step 6: Correlations
+
+* 아래 제시된 플롯은 변수 간의 패턴을 이해하기 위해 변수별로 패키지화되었습니다. 우리는 일부 변수 사이에 매우 높은 상관관계가 있음을 알 수 있습니다.
+
+```{r}
+pairs.panels(data[,c(3:12)], method="pearson",
+             hist.col = "#1fbbfa", density=TRUE, ellipses=TRUE, show.points = TRUE,
+             pch=1, lm=TRUE, cex.cor=1, smoother=F, stars = T, main="Cancer Mean")
+
+pairs.panels(data[,c(13:22)], method="pearson",
+             hist.col = "#1fbbfa", density=TRUE, ellipses=TRUE, show.points = TRUE,
+             pch=1, lm=TRUE, cex.cor=1, smoother=F, stars = T, main="Cancer SE")
+
+pairs.panels(data[,c(23:32)], method="pearson",
+             hist.col = "#1fbbfa", density=TRUE, ellipses=TRUE, show.points = TRUE,
+             pch=1, lm=TRUE, cex.cor=1, smoother=F, stars = T, main="Cancer Worst")
+```
+
+```{r}
+w.corr<-cor(data[,c(3:12)],method="pearson")
+corrplot(w.corr, order='hclust', method='ellipse',addCoef.col = 'black',type='lower', number.cex = 1,tl.cex = 1, diag=F,tl.col = 'black',tl.srt=15)
+
+w.corr<-cor(data[,c(13:22)],method="pearson")
+corrplot(w.corr, order='hclust', method='ellipse',addCoef.col = 'black',type='lower', number.cex = 1,tl.cex = 1, diag=F,tl.col = 'black',tl.srt=15)
+
+w.corr<-cor(data[,c(23:32)],method="pearson")
+corrplot(w.corr, order='hclust', method='ellipse',addCoef.col = 'black',type='lower', number.cex = 1,tl.cex = 1, diag=F,tl.col = 'black',tl.srt=15)
+```
+
+```{r}
+w.corr<-cor(data[,c(3:32)],method="pearson")
+corrplot(w.corr, order='hclust', method='ellipse',addCoef.col = 'black',type='lower', number.cex = 0.25,tl.cex = 0.25, diag=F,tl.col = 'black',tl.srt=15)
+```
+
+```{r}
+col<-colorRampPalette(c('blue','white','red'))(20)
+heatmap(x=w.corr, col=col,symm=T)
+```
+
+## Step 7: Training and testing datasets
+
+```{r}
+dataset<-data
+head(dataset)
+```
+
+* 데이터 세트는 training (70%)과 testing (30%)의 두 가지 데이터 세트로 나뉩니다.
+
+```{r}
+set.seed(123)
+smp_size <- floor(0.70 * nrow(dataset))
+train_ind <- sample(seq_len(nrow(dataset)), size = smp_size)
+train <- dataset[train_ind, ]
+test <- dataset[-train_ind, ]
+```
+
+* Let's check the target variable.
+
+```{r}
+prop.table(table(train$diagnosis))*100
+prop.table(table(test$diagnosis))*100
+```
+
+## Step 8: machine learning!
+
+### ML 1: Quinlan's C5.0
+
+Training the model.
+
+```{r}
+names(train)
+```
+
+```{r}
+learn_c50 <- C5.0(train[,-c(1,2)],train$diagnosis)
+learn_c50
+```
+
+Testing the model.
+
+```{r}
+pre_c50 <- predict(learn_c50, test[,-c(1,2)])
+cm_c50 <- confusionMatrix(pre_c50, test$diagnosis)
+cm_c50
+```
+
+### ML 2: Quinlan's C5.0 tunned
+
+```{r}
+acc_test <- numeric()
+accuracy1 <- NULL; accuracy2 <- NULL
+
+for(i in 1:50){
+    learn_imp_c50 <- C5.0(train[,-c(1,2)],train$diagnosis,trials = i)      
+    p_c50 <- predict(learn_imp_c50, test[,-c(1,2)]) 
+    accuracy1 <- confusionMatrix(p_c50, test$diagnosis)
+    accuracy2[i] <- accuracy1$overall[1]
+}
+
+acc <- data.frame(t= seq(1,50), cnt = accuracy2)
+
+opt_t <- subset(acc, cnt==max(cnt))[1,]
+sub <- paste("Optimal number of trials is", opt_t$t, "(accuracy :", opt_t$cnt,") in C5.0")
+
+hchart(acc, 'line', hcaes(t, cnt)) %>%
+  hc_title(text = "Accuracy With Varying Trials (C5.0)") %>%
+  hc_subtitle(text = sub) %>%
+  hc_add_theme(hc_theme_google()) %>%
+  hc_xAxis(title = list(text = "Number of Trials")) %>%
+  hc_yAxis(title = list(text = "Accuracy"))
+```
+
+```{r}
+learn_imp_c50 <- C5.0(train[,-c(1,2)],train$diagnosis,trials=opt_t$t)
+pre_imp_c50 <- predict(learn_imp_c50, test[,-c(1,2)])
+cm_imp_c50 <- confusionMatrix(pre_imp_c50, test$diagnosis)
+cm_imp_c50
+```
+
+### ML 3: Rpart (recursive partitioning and regression trees)
+
+```{r}
+learn_rp <- rpart(diagnosis~.,data=train[,-1],control=rpart.control(minsplit=2))
+```
+
+Testing the model.
+
+```{r}
+pre_rp <- predict(learn_rp, test[,-c(1,2)], type="class")
+cm_rp  <- confusionMatrix(pre_rp, test$diagnosis)
+cm_rp
+```
+
+### ML 4: Prunned Rpart (recursive partitioning and regression trees)
+
+Training the model.
+
+```{r}
+learn_pru <- prune(learn_rp, cp=learn_rp$cptable[which.min(learn_rp$cptable[,"xerror"]),"CP"])
+```
+
+Testing the model.
+
+```{r}
+pre_pru <- predict(learn_pru, test[,-c(1,2)], type="class")
+cm_pru <-confusionMatrix(pre_pru, test$diagnosis)
+cm_pru
+```
+
+### ML 5: Naive Bayes
+
+Training the model.
+
+```{r}
+learn_nb <- naiveBayes(train[,-c(1,2)], train$diagnosis)
+```
+
+Testing the model.
+
+```{r}
+pre_nb <- predict(learn_nb, test[,-c(1,2)])
+cm_nb <- confusionMatrix(pre_nb, test$diagnosis)
+cm_nb
+```
+
+### ML 7: Logistic regression
+
+Training the model.
+
+```{r}
+fitControl <- trainControl(## 10-fold CV
+  method = "cv",
+  number = 10,
+  savePredictions = TRUE)
+
+lreg<-train(diagnosis~.,data=train[,-1],method="glm",family=binomial(),
+             trControl=fitControl)
+varImp(lreg)
+```
+
+Testing the model.
+
+```{r}
+lreg_pred<-predict(lreg,test[,-c(1,2)])
+cm_logistic<-confusionMatrix(lreg_pred,test$diagnosis)
+cm_logistic
+```
+
+### ML 8: Random Forest
+
+Training the model.
+
+```{r}
+learn_ranger  <- train(diagnosis ~ ., data = train[,-1], method = "ranger")
+learn_ranger
+```
+
+Testing the model.
+
+```{r}
+pre_ranger <- predict(learn_ranger, test[,-c(1,2)])
+cm_ranger <- confusionMatrix(pre_ranger, test$diagnosis)
+cm_ranger
+```
+
+### ML 9: Classification tree
+
+Training the model.
+
+```{r}
+learn_ct <- ctree(diagnosis~., data=train[,-1], controls=ctree_control(maxdepth=2))
+```
+
+Testing the model.
+
+```{r}
+pre_ct   <- predict(learn_ct, test[,-c(1,2)])
+cm_ct    <- confusionMatrix(pre_ct, test$diagnosis)
+cm_ct
+```
+
+### ML 10: K-nn
+
+Training the model.
+
+```{r}
+control <- trainControl(method='repeatedcv', 
+                        number=10, 
+                        repeats=3)
+knnFit <- train(diagnosis ~ ., data = train[,-1], method = "knn", trControl = control,tuneLength = 20)
+plot(knnFit)
+```
+
+Testing the model.
+
+```{r}
+knnPredict <- predict(knnFit,newdata = test )
+cm_knn<-confusionMatrix(knnPredict, test$diagnosis )
+cm_knn
+```
+
+### ML 11: K-means
+
+Training the model.
+
+```{r}
+predict.kmeans <- function(newdata, object){
+    centers <- object$centers
+    n_centers <- nrow(centers)
+    dist_mat <- as.matrix(dist(rbind(centers, newdata)))
+    dist_mat <- dist_mat[-seq(n_centers), seq(n_centers)]
+    max.col(-dist_mat)
+}
+```
+
+```{r}
+learn_kmeans <- kmeans(train[,-c(1,2)], centers=2)
+```
+
+Testing the model.
+
+```{r}
+pre_kmeans <- predict.kmeans(test[,-c(1,2)],learn_kmeans)
+pre_kmeans <- factor(ifelse(pre_kmeans == 1,"B","M"))
+cm_kmeans <- confusionMatrix(pre_kmeans, test$diagnosis)
+cm_kmeans
+```
+
+### ML 12: Gradient boosting machines
+
+Training the model.
+
+```{r}
+test_gbm <- gbm(diagnosis~., data=train[,-1], distribution="gaussian",n.trees = 10000,
+                shrinkage = 0.01, interaction.depth = 4, bag.fraction=0.5, train.fraction=0.5,n.minobsinnode=10,cv.folds=3,keep.data=TRUE,verbose=FALSE,n.cores=1)
+
+best.iter <- gbm.perf(test_gbm, method="cv",plot.it=FALSE)
+fitControl = trainControl(method="cv", number=5, returnResamp="all")
+learn_gbm = train(diagnosis~., data=train[,-1], method="gbm", distribution="bernoulli", trControl=fitControl, verbose=F, tuneGrid=data.frame(.n.trees=best.iter, .shrinkage=0.01, .interaction.depth=1, .n.minobsinnode=1))
+```
+
+Testing the model.
+
+```{r}
+pre_gbm <- predict(learn_gbm, test[,-c(1,2)])
+cm_gbm <- confusionMatrix(pre_gbm, test$diagnosis)
+cm_gbm
+```
+### ML 13: Adaboost
+
+Training the model.
+
+```{r}
+control <- rpart.control(cp = -1, maxdepth = 14,maxcompete = 1,xval = 0)
+learn_ada <- ada(diagnosis~., data = train[,-1], test.x = train[,-c(1,2)], test.y = train$diagnosis, type = "gentle", control = control, iter = 70)
+```
+
+Testing the model.
+
+
+```{r}
+pre_ada <- predict(learn_ada, test[,-c(1,2)])
+cm_ada <- confusionMatrix(pre_ada, test$diagnosis)
+cm_ada
+```
+### ML 14: Support vector machines
+
+Training the model.
+
+```{r}
+learn_svm <- svm(diagnosis~., data=train[,-1])
+```
+
+Testing the model.
+
+```{r}
+pre_svm <- predict(learn_svm, test[,-c(1,2)])
+cm_svm <- confusionMatrix(pre_svm, test$diagnosis)
+cm_svm
+```
+### ML 15: Tunned Support vector machines
+
+Training the model.
+
+```{r}
+gamma <- seq(0,0.1,0.005)
+cost <- 2^(0:5)
+parms <- expand.grid(cost=cost, gamma=gamma)    
+
+acc_test <- numeric()
+accuracy1 <- NULL; accuracy2 <- NULL
+
+for(i in 1:NROW(parms)){        
+        learn_svm <- svm(diagnosis~., data=train[,-1], gamma=parms$gamma[i], cost=parms$cost[i])
+        pre_svm <- predict(learn_svm, test[,-c(1,2)])
+        accuracy1 <- confusionMatrix(pre_svm, test$diagnosis)
+        accuracy2[i] <- accuracy1$overall[1]
+}
+
+acc <- data.frame(p= seq(1,NROW(parms)), cnt = accuracy2)
+
+opt_p <- subset(acc, cnt==max(cnt))[1,]
+sub <- paste("Optimal number of parameter is", opt_p$p, "(accuracy :", opt_p$cnt,") in SVM")
+
+hchart(acc, 'line', hcaes(p, cnt)) %>%
+  hc_title(text = "Accuracy With Varying Parameters (SVM)") %>%
+  hc_subtitle(text = sub) %>%
+  hc_add_theme(hc_theme_google()) %>%
+  hc_xAxis(title = list(text = "Number of Parameters")) %>%
+  hc_yAxis(title = list(text = "Accuracy"))
+```
+
+```{r}
+learn_imp_svm <- svm(diagnosis~., data=train[,-1], cost=parms$cost[opt_p$p], gamma=parms$gamma[opt_p$p])
+```
+
+Testing the model.
+
+```{r}
+pre_imp_svm <- predict(learn_imp_svm, test[,-c(1,2)])
+cm_imp_svm <- confusionMatrix(pre_imp_svm, test$diagnosis)
+cm_imp_svm
+```
+
+### ML 16: Random Forest: ranger
+
+Training the model.
+
+```{r}
+tgrid <- expand.grid(
+  .mtry = 2:4,
+  .splitrule = "gini",
+  .min.node.size = c(10, 20)
+)
+ranger_caret <- train(diagnosis~.,data=train[,-1],
+                     method = "ranger",
+                     trControl = fitControl,
+                     tuneGrid = tgrid,
+                     num.trees = 100,
+                     importance = "permutation")
+varImp(ranger_caret)
+```
+
+Testing the model.
+
+```{r}
+Rangercaret_pred<-predict(ranger_caret,test[,-c(1,2)])
+cm_Ranger<-confusionMatrix(Rangercaret_pred,test$diagnosis)
+cm_Ranger
+```
+
+### ML 17: Random Forest: caret+RF
+
+Training the model.
+
+```{r}
+#10 folds repeat 3 times
+control <- trainControl(method='repeatedcv', 
+                        number=10, 
+                        repeats=3)
+#Metric compare model is Accuracy
+metric <- "Accuracy"
+set.seed(123)
+#Number randomely variable selected is mtry
+mtry <- sqrt(ncol(train))
+tunegrid <- expand.grid(.mtry=mtry)
+rf_caret <- train(diagnosis~.,data=train[,-1], 
+                      method='rf', 
+                      metric='Accuracy', 
+                      tuneGrid=tunegrid, 
+                      trControl=control)
+varImp(rf_caret)
+```
+
+Testing the model.
+
+```{r}
+RFcaret_pred<-predict(rf_caret,test[,-c(1,2)])
+cm_rf<-confusionMatrix(RFcaret_pred,test$diagnosis)
+cm_rf
+```
+
+## Step 9: The best model
+
+이 커널에서는 여러 분류 ML 절차가 적용됨
+
+- Logistic regression / 로지스틱 회귀
+- Decission tree: C5.0 and improved C5.0 / 의사결정나무: C5.0 및 개선된 C5.0
+- Rpart and Rpart prunned / Rpart와 Rpart가 잘렸습니다
+-  Naive Bayes / 나이브 베이즈
+- Random Forest: ranger, caret+ranger, caret+random forest / 랜덤 포레스트: 레인저 캐럿+레인저, 캐럿+랜덤 포레스트.
+- K-nn
+- Classification tree / 분류 트리
+- Gradient boosting machine / GBM(그라디언트 부스팅 머신)
+- Adaboost
+- Support vector machines (SVM) and improved SVM. / SVM(벡터 머신) 및 향상된 SVM을 지원합니다
+
+```{r}
+col <- c("#ed3b3b", "#0099ff")
+par(mfrow=c(2,3))
+fourfoldplot(cm_logistic$table, color = col, conf.level = 0, margin = 1, main=paste("Logistic (",round(cm_ranger$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_c50$table, color = col, conf.level = 0, margin = 1, main=paste("C5.0 (",round(cm_c50$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_imp_c50$table, color = col, conf.level = 0, margin = 1, main=paste("Tuned C5.0 (",round(cm_imp_c50$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_rp$table, color = col, conf.level = 0, margin = 1, main=paste("RPart (",round(cm_rp$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_pru$table, color = col, conf.level = 0, margin = 1, main=paste("Prune (",round(cm_pru$overall[1]*100),"%)",sep=""))
+
+par(mfrow=c(2,3))
+fourfoldplot(cm_ct$table, color = col, conf.level = 0, margin = 1, main=paste("CTree (",round(cm_ct$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_nb$table, color = col, conf.level = 0, margin = 1, main=paste("NaiveBayes (",round(cm_nb$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_knn$table, color = col, conf.level = 0, margin = 1, main=paste("K-nn (",round(cm_ranger$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_gbm$table, color = col, conf.level = 0, margin = 1, main=paste("GBM (",round(cm_gbm$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_ada$table, color = col, conf.level = 0, margin = 1, main=paste("AdaBoost (",round(cm_ada$overall[1]*100),"%)",sep=""))
+
+par(mfrow=c(2,3))
+fourfoldplot(cm_svm$table, color = col, conf.level = 0, margin = 1, main=paste("SVM (",round(cm_svm$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_imp_svm$table, color = col, conf.level = 0, margin = 1, main=paste("Tuned SVM (",round(cm_imp_svm$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_ranger$table, color = col, conf.level = 0, margin = 1, main=paste("RF (",round(cm_ranger$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_Ranger$table, color = col, conf.level = 0, margin = 1, main=paste("RF caret/ranger (",round(cm_ranger$overall[1]*100),"%)",sep=""))
+fourfoldplot(cm_rf$table, color = col, conf.level = 0, margin = 1, main=paste("RF caret/rf (",round(cm_ranger$overall[1]*100),"%)",sep=""))
+
+
+```
+
+Which model is better?
+
+```{r}
+opt_predict <- c(cm_logistic$overall[1],cm_ranger$overall[1],cm_Ranger$overall[1],cm_rf$overall[1],cm_c50$overall[1],cm_imp_c50$overall[1],cm_rp$overall[1],cm_pru$overall[1],cm_nb$overall[1],cm_ct$overall[1],cm_knn$overall[1],cm_gbm$overall[1],cm_ada$overall[1],cm_svm$overall[1],cm_imp_svm$overall[1] )
+names(opt_predict) <- c("Logistic regression","Random Forest caret Ranger","Random Forest Ranger","Random Forest RF","C5.0","C5.0 improved","Rpart","Rpart improved","Naive Bayes","Classification tree","K-nn","GBM","Adaboost","SVM","SVM improved")
+best_predict_model <- subset(opt_predict, opt_predict==max(opt_predict))
+best_predict_model
+```
+
+```{r}
+cm_imp_svm$table
+```
+<br>
+
+## *10단계: 잘못 분류된 환자에게는 무슨 일이 일어나고 있나요? *
+
+잘못 분류된 환자는 악성 종양이 있는 환자이며 모델은 종양이 양성이라고 예측했습니다. 이는 임상 환경에서 중요한 의미를 갖습니다. 이러한 환자를 필터링하면 각 변수의 값을 확인할 수 있습니다.
+
+```{r}
+test[which(pre_imp_svm== 'B' & test$diagnosis=='M'),]
+```
+
+이제 모든 변수의 평균을 계산해 보겠습니다. 평가할 수 있듯이 잘못 분류된 환자의 값은 양성 종양 환자의 평균 값과 유사합니다. 따라서 이러한 환자를 특성상 분류할 때 모든 ML 절차에 문제가 있을 수 있습니다.
+
+```{r}
+aggregate(data[, 3:32], list(data$diagnosis), mean)
+```
+
+
+
+
+
+
+
