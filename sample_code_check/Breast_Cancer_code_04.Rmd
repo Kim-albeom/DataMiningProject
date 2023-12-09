@@ -1,0 +1,229 @@
+---
+title: "Breast_Cancer_code_04"
+author: "Nam, Yeong-jae"
+date: "`r Sys.Date()`"
+output: 
+    prettydoc::html_pretty:
+      theme: leonids
+      toc: yes
+---
+****
+필요패키지: `devtools`, `funModeling`, `caret`, `nnet`, `gmodels`, `C50`, `NeuralNetTools`, `partykit`, `knitr`, `e1071`, `Hmisc`
+
+## 0. 패키지 불러오기
+```{r}
+library(devtools)
+require(devtools)
+devtools::install_github('pablo14/funModeling')
+require(funModeling)
+library(caret)
+library(nnet)
+library(gmodels)
+library(C50)
+library(NeuralNetTools)
+library(partykit)
+library(knitr)
+library(e1071)
+library(Hmisc)
+
+# 청크 전역설정
+knitr::opts_chunk$set(fig.width=12, fig.height=12) 
+```
+
+<br><br><br>
+
+## 1. 데이터 불러오기 및 확인 작업업
+```{r}
+Cancer = read.csv(".\\data\\Breast_Cancer.csv")
+
+# 결측치 확인하기(1)
+describe(Cancer)
+
+
+# 결측치 확인하기(2) False means NA
+sum(complete.cases(Cancer)) == nrow(Cancer)
+
+
+# 결측치 확인하기(3) X means NA
+colnames(Cancer)[colSums(is.na(Cancer))>0]
+
+```
+ X 변수 열은 __"NA"__ 만을 원소로 가지고 있다. id와 함께 없애주자.
+ 
+ <br><br>
+
+```{r}
+# subset() 함수로 말 그래도 부분을 출력해주는 함수를 의미.
+Cancer = subset(Cancer, select = -c(X, id))
+
+
+# diagnosis 변수가 현재 chr형 자료이므로 factor로 변환해줘야 한다. 
+# 'B': 양성(Benign)
+# 'M': 악성(Malignant)
+Cancer$diagnosis = as.factor(Cancer$diagnosis)
+```
+
+<br><br><br>
+
+## 2. 기초 분석
+
+```{r}
+kable(df_status(Cancer), caption="Breast Cancer Data Analysis")
+```
+`1.` 에서 보았듯이 0인 열은 존재해도 NA이거나 INF인 값은 없는 것이 확인된다.
+
+<br>
+
+```{r}
+plot_num(Cancer)
+```
+
+대부분의 열에서, 데이터의 빈도는 정규분포형태를 보인다.
+
+
+<br><br><br>
+
+## 3. PCA를 사용한 표준화된 데이터셋
+진단 결과에 대한 1번 열을 PCA 그리고 예측을 위해 무시하고 진행하겠다.(열을 제거한다는 의미.)
+
+```{r}
+PCA = prcomp(Cancer[,-1], retx=T, center=T, scale=T)
+
+pred = predict(PCA, newdata = Cancer[,-1])
+```
+
+
+다시 제거되었던 열(진단결과)을 합쳐준다.
+
+<br><br>
+
+```{r}
+Cancer = data.frame(cbind(pred, diagnosis = Cancer[,1]))
+
+Cancer$diagnosis = as.factor(Cancer$diagnosis)
+```
+
+<br><br>
+
+sample을 생성하고, train과 validation 데이터로 나눠준다.
+
+```{r}
+set.seed(1023)
+
+sample = sample(nrow(Cancer), nrow(Cancer)*0.8)
+
+Cancer_train = data.frame(Cancer[sample,])
+
+Cancer_valid= data.frame(Cancer[-sample,])
+```
+
+<br><br><br>
+
+## 4. C5.0 모델 생성하기
+### 4-1. (의사결정트리알고리즘, C4.5의 향상된 버전)
+```{r}
+# C5.0 모델 생성. training이 70%면 sample에도 0.7을 지정.(GPT가 맞다네요)
+
+model_C5 = C5.0(diagnosis ~ ., data = Cancer_train, 
+                trial = 50,
+                control = C5.0Control(
+                  noGlobalPruning = T,
+                  CF = 0.8,
+                  minCases = 10,
+                  sample = 0.80,
+                  winnow = F,
+                  earlyStopping = T
+                ))
+```
+
+```{r}
+# model에서 중요 변수를 확인할 수 있다.
+C5imp(model_C5)
+```
+
+### 4-2. 생성된 모델의 plot
+C5.0의 기본 함수는 회색스케일 이미지로 제공해서, partykit을 사용했다.
+```{r}
+columncol = hcl(c(270, 260, 250), 200, 30, 0.6)
+labelcol = hcl(200, 200, 50, 0.2)
+indexcol = hcl(150, 200, 50, 0.4)
+
+
+model_C5a = C50::as.party.C5.0(model_C5)
+
+
+plot(model_C5a, 
+     type='simple', 
+     gp=gpar(fontsize=8),
+     drop_terminal = T,
+     tnex=1,
+     inner_panel = node_inner(model_C5a, abbreviate = F, fill=c(labelcol, indexcol), pval = T, id = T),
+     terminal_panel = node_barplot(model_C5a, col='black', fill=columncol[c(1,2,4)], beside=T, ymax=1, ylines=T, widths=1, gap = 0.1, reverse=F, id=T))
+```
+
+<br><br>
+
+### 4-3. 예측과 교차테이블 출력
+
+```{r}
+predictions_C5 = predict(model_C5, Cancer_valid[-31], type='class')
+
+
+CrossTable(Cancer_valid$diagnosis, predictions_C5, prop.chisq = F, prop.c=F, prop.r=F, dnn = c("Actual diagnosis", "Predicted diagnosis"))
+```
+
+### 4-4. model 정확도 평가
+```{r}
+paste0(round(sum(predictions_C5 == Cancer_valid$diagnosis)/nrow(Cancer_valid)*100, digit=4), "%")
+
+
+```
+
+```{r}
+Cancer_train$predictions_C5 = predict(model_C5, Cancer_train[-31], type='class')
+
+Cancer_train$predictions_C5 = as.factor(Cancer_train$predictions_C5)
+
+CrossTable(Cancer_train$diagnosis, Cancer_train$predictions_C5, prop.chisq = F, prop.c=F, prop.r=F, dnn = c("Actual diagnosis", "Predicted diagnosis"))
+
+paste0(round(sum(Cancer_train$predictions_C5 == Cancer_train$diagnosis)/nrow(Cancer_train)*100, digit=4), "%")
+```
+
+
+<br><br><br>
+
+
+## 5. NN model을 생성
+```{r}
+myform = as.formula(paste0('diagnosis ~ ', paste(names(Cancer_train[!names(Cancer_train) %in% 'diagnosis']), collapse= '+')))
+
+model_nnet = nnet(diagnosis ~., data=Cancer_train, size=3, rang=1, decay=8e-4, maxit=200)
+```
+
+```{r}
+predictions_nnet = predict(model_nnet, Cancer_valid[,-31], type=c('class'))
+
+CrossTable(Cancer_valid$diagnosis, predictions_nnet, prop.chisq = F, prop.c=F, prop.r=F, dnn = c("Actual diagnosis", "Predicted diagnosis"))
+```
+
+```{r}
+paste0(round(sum(predictions_nnet == Cancer_valid$diagnosis)/nrow(Cancer_valid)*100, digit=4), "%")
+```
+
+## 6. 변수 중요도 평가
+```{r}
+olden(model_nnet)
+```
+
+<br><br><br>
+
+## 7. NNT ploting
+
+```{r}
+rel_imp =  garson(model_nnet, barplot = F)$rel_imp
+
+cols = colorRampPalette(c("lightgreen","darkgreen"))(3)[rank(rel_imp)]
+
+plotnet(model_nnet, cex_val=.8, max_sp=T, circle_cex=3, circle_col = list(cols, 'lightblue'))
+```
+
