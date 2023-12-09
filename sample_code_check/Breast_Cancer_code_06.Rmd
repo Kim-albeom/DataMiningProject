@@ -1,0 +1,448 @@
+---
+title: "Breast_Cancer_code_06"
+author: "Nam, Yeong-jae"
+date: "`r Sys.Date()`"
+output: 
+    prettydoc::html_pretty:
+      theme: leonids
+      toc: yes
+---
+***
+필요패키지: `Hmisc`, `PerformanceAnalytics`, `ggplot2`, `GGally`, `corrplot`, `factoextra`, `gridExtra`, `caret`, `C50`, `highcharter`, `randomForest`
+
+
+## 1. 양성과 악성 유방암에 대한 이항 분류 by Visualization
+```{r}
+## Loading and observing data
+
+Cancer = read.csv(".\\data\\Breast_Cancer.csv")
+
+head(Cancer)
+
+dim(Cancer)
+```
+
+<br><br>
+
+
+### 1-1. Null, missing value가 있는 열을 확인.
+함수를 직접 만들어서 확인...
+```{r}
+## Function to print the columns with null value
+
+CheckColAllNulls = if(ncol(Filter(function(x) any(is.na(x)), Cancer))>0) {
+  cat("columns have nulls: ", ncol(Filter(function(x) any(is.na(x)), Cancer)))
+  cat("\n\n")
+  cat("columns names that have nulls: ", colnames(Filter(function(x) any(is.na(x)), Cancer)))
+  cat("\n\n")
+  # df = filter(function(x) ! any(is.na(x)), df)
+  # print("columns having any nulls are removed")
+} else{
+  print("No columns having any nulls are found")
+}
+
+```
+```{r}
+table(Cancer$X)
+```
+```{r}
+## Removing the column X
+
+Cancer = Filter(function(x) ! any(is.na(x)), Cancer)
+
+dim(Cancer)
+```
+<br><br>
+
+### 1-2. 범주형 변수 인코딩
+```{r}
+## if diagnosis column is M meaning Malignant then 1 else 0 for B or Benign
+
+Cancer$diagnosis = (ifelse(Cancer$diagnosis=='B', 0, 1))
+
+table(Cancer$diagnosis)
+
+Cancer$Label_Diagnosis = factor(ifelse(Cancer$diagnosis == 1, 1, 0))
+```
+
+<br><br>
+
+### 1-3. 데이터 요약
+```{r}
+# summary(Cancer)
+str(Cancer)
+
+head(Cancer)
+```
+
+## 2. 변수간 상관관계
+```{r}
+library(Hmisc)
+
+flattenCorrMatrix = function(cormat, pmat){
+  ut = upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = colnames(cormat)[col(cormat)[ut]],
+    cor = (cormat)[ut],
+    p = pmat[ut]
+  )
+}
+
+corr_res = rcorr(as.matrix(Cancer[,c(2:11)]))
+
+flattenCorrMatrix(corr_res$r, corr_res$P)
+```
+
+<br><br>
+
+```{r, warning=FALSE}
+library(PerformanceAnalytics)
+# showing histogram
+# color grey
+
+options(repr.plot.width=20, repr.plot.height=20, repr.plot.res=100)
+
+chart.Correlation(Cancer[,c(2:11)], histogram=T,
+                  col='grey10',
+                  pch=1,
+                  cex.cor.scale=2,
+                  main="Cancer Correlation Plot",
+                  cex.labels=20)
+```
+
+<br><br>
+
+```{r}
+library(ggplot2)
+library(GGally)
+
+options(repr.plot.width = 20,  repr.plot.height=15, repr.plot.res=100)
+
+# The correlation plots should have 2 distributions of seperate colors according to out Label Diagnosis
+# alpha is basically the opacity
+
+ggpairs(Cancer[,c(3:11, 33)],
+        aes(color=Label_Diagnosis, alpha=0.7),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper = list(continuous = wrap("cor", size=2))) +
+  labs(title="Cancer Plot") + 
+  theme(plot.title=element_text(face='bold', color='black', hjust=0.5, size=5))
+```
+
+```{r, warning=FALSE}
+library(corrplot)
+
+options(repr.plot.width = 20, repr.plot.height = 20, repr.plot.res = 100)
+
+corrplot(cor(Cancer[,c(2:12)]),
+         type='lower',
+         order='hclust',
+         tl.col='black',
+         addCoef.col = 'black',
+         number.cex = 0.8,
+         tl.cex = 0.8,
+         title="Cancer Mean",
+         diag=F,
+         mar=c(0,0,1,0))
+
+corrplot(cor(Cancer[,c(12:22, 2)]),
+         type='lower',
+         order='hclust',
+         tl.col='black',
+         addCoef.col = 'black',
+         number.cex = 0.8,
+         tl.cex = 0.8,
+         title="Cancer Worst",
+         diag=F,
+         mar=c(0,0,1,0))
+
+corrplot(cor(Cancer[,c(22:32, 2)]),
+         type='lower',
+         order='hclust',
+         tl.col='black',
+         addCoef.col = 'black',
+         number.cex = 0.8,
+         tl.cex = 0.8,
+         title="Cancer Worst",
+         diag=F,
+         mar=c(0,0,1,0))
+```
+```{r}
+## Another library that could be usd: ggcorr
+
+# ggcorr(Cancer[,c(2:11)], name="corr", label=T) + 
+# theme(legend.position="none") +
+# labs(title="Cancer Mean") +
+# theme(plot.title=element_text(face='bold', color='black', hjust=0.5, size=12))
+```
+
+### 2-1. 요약
+아래 변수들은 Diagnosis와 높은 상관성을 보인다.
+* concavity_mean/concave.points_mean
+* area_mean/radius_mean/perimeter_mean
+* area_worst/radius_worst/perimeter_worst
+* concavity_worst/concave.points_worst
+
+## 3. PCA를 이용해서 변수 선택
+```{r}
+library(factoextra)
+
+Cancer_pca = transform(Cancer)
+
+all_pca = prcomp(Cancer_pca[,c(3:32)], cor=TRUE, scale=TRUE)
+
+summary(all_pca)
+```
+PC1부터 PC6부터 전체변동의 88.7%를 설명.
+
+
+<br><br>
+
+
+```{r}
+## Visualization of PCA components using screeplot -> 산비탈그림(PC 선택)
+
+
+options(repr.plot.width = 20, repr.plot.height = 10, repr.plot.res = 100)
+
+fviz_eig(all_pca,
+         addlabels = TRUE,
+         ylim=c(0, 100),
+         geom=c("bar", "line"),
+         barfill="pink",
+         barcolor='grey',
+         linecolor="red",
+         ncp=10, labelsize=13, repel=T) +
+  theme(text=element_text(size=25, color="#002b80"),
+        axis.title=element_text(size=10),
+        axis.text=element_text(size=10)) +
+  labs(title="Cancer all variables PCA",
+       x="Principal Components",
+       y="% of variance explained")
+```
+```{r}
+fviz_pca_var(all_pca, labelsize=3, repel=T) + 
+  theme(text = element_text(size=3, color="#002b80"),
+        axis.title = element_text(size=5),
+        axis.text = element_text(size=3)) +
+  labs(title ="Cancer all variavbles PCA\n",
+       x="Dim2 (19%)",
+       y="Dim1 (44%)")
+```
+
+```{r}
+(all_var_explained = get_pca_var(all_pca))
+```
+
+```{r}
+library(corrplot)
+
+options(repr.plot.width = 20, repr.plot.height = 15)
+
+corrplot(all_var_explained$contrib,
+         is.corr=F,
+         tl.col='black',
+         tl.cex=0.8)
+```
+```{r}
+## quality of representation of variables
+## since PC1 to PC6 have the highest explained variance -- cos 2 elaborates that and the correlation between variables and Principal Components
+
+corrplot(all_var_explained$cos2,
+         is.corr=F,
+         tl.col='black',
+         tl.cex=0.8)
+```
+
+```{r}
+## Contributions of variables to PC1 and PC2
+
+library(gridExtra)
+
+p1 = fviz_contrib(all_pca, choice="var", axes=1, fill="pink", top=10)
+
+p2 = fviz_contrib(all_pca, choice="var", axes=2, fill="skyblue", top=10)
+
+grid.arrange(p1,p2,ncol=2)
+```
+
+## 4. PC를 이용한 변수 클러스터링
+```{r}
+set.seed(21)
+
+res_clusters = kmeans(all_var_explained$coord, centers=6, nstart=25) # nstart generates multiple initial configurations and reports the best one
+
+groups = as.factor(res_clusters$cluster)
+
+
+fviz_pca_var(all_pca,
+             col.var = groups,
+             palette="jco",
+             legend.title="Cluster/PC",
+             labelsize=6, repel=T) +
+  theme(text=element_text(size=2, color="#002b80"),
+        axis.title = element_text(size=3),
+        axis.text = element_text(size=3)) +
+  labs(title="Varibles clustered acc to Principal Component representation\n",
+       x="Dim2 (19%)",
+       y="Dim1 (44%)")
+```
+```{r}
+## Biplot according to diagnosis
+
+fviz_pca_biplot(all_pca, 
+                col.ind = Cancer$Label_Diagnosis,
+                col="#009999",
+                palette="jco",
+                legend.title = "Diagnosis",
+                addEllipses=TRUE,
+                geom="point", 
+                repel=TRUE, # repel overlapping text
+                labelsize=6) +
+  theme(text = element_text(size = 2, color="#002b80"),
+        axis.title = element_text(size = 5),
+        axis.text = element_text(size = 5)) + 
+  labs(title="Varibles clustered acc to Principal Component representation Segmented by Diagnosis\n",
+    x="Dim2 (19%)",
+    y="Dim1 (44%)")
+```
+
+<br><br><br>
+
+## 5. 결론
+PC1: Concavity, radius
+PC2: radius, compactness, smoothness, fractal dimensions
+
+```{r}
+## Forming dataframe of the top 3 PCs and associated labels
+
+pca = all_pca$x
+pca = cbind(pca, Cancer)
+pca = pca[,c(1:3, 31, 63)]
+
+head(pca)
+```
+```{r}
+table(pca$Label_Diagnosis)
+```
+
+### 5-1. PCA를 사용한 ML로 예측하기.
+```{r}
+# Splitting into training and test set using Caret package
+
+library(caret)
+
+set.seed(21)
+train_index = createDataPartition(pca$Label_Diagnosis,
+                                  p=0.8,
+                                  list=F
+                                  #times=1 # times: number of partitions to create
+                                  )
+
+train_df = pca[train_index,]
+test_df = pca[-train_index,]
+```
+
+```{r}
+dim(train_df)
+```
+```{r}
+dim(test_df)
+```
+
+```{r}
+## Almost similar proportion of benign to malignant in train and test set
+
+prop.table(table(train_df$Label_Diagnosis))
+
+prop.table(table(test_df$Label_Diagnosis))
+```
+
+```{r}
+# C5.0 model
+
+library(C50)
+
+C50_model = C5.0(x=train_df[,1:3],
+                 y=train_df$Label_Diagnosis,
+                 ## Controlling overfitting,
+                 control = C5.0Control(
+                   earlyStopping = T, minCases = 10, CF=0.25),
+                 trails=20)
+
+# summary(c50_model)
+# plot(c50_model)
+```
+
+```{r}
+y_pred = predict(C50_model, test_df[,1:3])
+
+cm_c5.0 = confusionMatrix(test_df$Label_Diagnosis, y_pred)
+
+
+cm_c5.0
+```
+
+```{r}
+acc_test <- numeric()
+accuracy1 <- NULL; 
+accuracy2 <- NULL
+
+for(i in 1:50){
+    C5.0_model_tuned <- C5.0(train_df[,1:3],train_df$Label_Diagnosis,trials = i)      
+    y_pred <- predict(C5.0_model_tuned, test_df[,1:3]) 
+    accuracy1 <- confusionMatrix(y_pred, test_df$Label_Diagnosis)
+    accuracy2[i] <- accuracy1$overall[1]
+}
+
+acc <- data.frame(t= seq(1,50), cnt = accuracy2)
+
+opt_t <- subset(acc, cnt==max(cnt))[1,]
+sub <- paste("Optimal number of trials is", opt_t$t, "(accuracy :", opt_t$cnt,") in C5.0")
+
+
+library(highcharter)
+hchart(acc, 'line', hcaes(t, cnt)) %>%
+  hc_title(text = "Accuracy With Varying Trials (C5.0)") %>%
+  hc_subtitle(text = sub) %>%
+  hc_add_theme(hc_theme_google()) %>%
+  hc_xAxis(title = list(text = "Number of Trials")) %>%
+  hc_yAxis(title = list(text = "Accuracy"))
+```
+```{r}
+## After Tuning
+
+c50_model <- C5.0(x= train_df[,1:3], 
+                  y=train_df$Label_Diagnosis,
+                  ## Controlling overfitting
+                  conrol = C5.0Control(earlyStopping=TRUE, minCases=10, CF = 0.25),
+                  trials=5
+                 )
+
+y_pred <- predict(c50_model, test_df[,1:3])
+cm_c5.0 <- confusionMatrix(test_df$Label_Diagnosis, y_pred)
+cm_c5.0
+```
+```{r}
+## Adding final predictions to wbcd_df
+test_df$Predicted_Diagnosis <- as.vector(y_pred)
+head(test_df, 10)
+```
+```{r}
+# Plotting confusion matrix
+
+# par(mfrow=c(3,5))  # for making subplots
+# #options(repr.plot.width = 1, repr.plot.height = 0.75)
+# fourfoldplot(cm_c5.0$table, color=c("#CC6666", "#99CC99"), conf.level = 0, margin = 1, main = "C5.0 Confusion Matrix")
+```
+
+```{r}
+library(randomForest)
+train_df <- train_df
+model_rf <- randomForest(train_df[,1:3], train_df$Label_Diagnosis, ntree=200, proximity=T, importance=T)
+y_pred <- predict(model_rf, test_df[,1:3])
+cm_rf <- confusionMatrix(test_df$Label_Diagnosis, y_pred)
+cm_rf
+```
+
