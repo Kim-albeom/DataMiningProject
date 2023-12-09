@@ -1,0 +1,469 @@
+---
+title: "Breast_Cancer_code_05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+## Breast_cancer analysis
+
+### Step 0 : usage library
+
+설치 안된 라이브러리의 경우 설치 필요
+```{r}
+library(tidyverse)
+library(caret)
+library(ggfortify)
+library(randomForest)
+```
+
+
+이것은 또 다른 분류 예입니다. 유방 종양을 악성 또는 양성으로 분류해야 합니다. 
+
+데이터세트는 [UCI 기계 학습 웹사이트](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+(Diagnostic))와 [Kaggle](https:// www.kaggle.com/uciml/breast-cancer-wisconsin-data.
+
+우리는 아래 참조 섹션에 나열된 여러 블로그에서 아이디어를 얻었습니다.
+
+<br>
+
+### Step 1 : Import the data  
+
+```{r message=FALSE}
+library(tidyverse)
+df <- read.csv("./data/breast_cancer.csv")
+
+# NULL Data인 X열 제외
+df <- df %>% select(-X)
+
+# 이것은 가장 중요한 단계:
+# 각 변수에 적절한 클래스가 있는지 확인
+str(df)
+```
+
+그래서 우리는 `r ncol(df)` 변수를 가진 `r nrow(df)` 관측치를 갖게 되었습니다. 이상적으로는 변수가 너무 많으면 몇 가지 더 많은 관찰을 얻는 것이 적절할 것입니다.
+
+또한 수치 변수의 값 범위를 확인할 수 있습니다. 분명히, 기계 학습 알고리즘을 실행하기 전에 데이터를 정규화해야 합니다.
+
+<br>
+
+### Step 2 : Tidy the data(데이터를 정리)
+
+결과 변수에 대한 변수 유형의 기본 변경 및 잘못 인코딩된 변수의 이름 변경  
+```{r}
+df$diagnosis <- as.factor(df$diagnosis)
+```
+
+데이터 세트를 실행 가능하게 만들기 위해 정리할 작업이 거의 없다는 것은 매우 이례적입니다. 그대로 진행
+
+### Step 3 : Understand the data 
+
+이것이 데이터 처리의 순환 단계입니다. 여기에서 각각의 변형, 시각화 및 모델링 단계가 서로 강화되어 더 나은 이해를 이끌어냅니다.
+
+Check for missing values  
+```{r}
+map_int(df, function(.x) sum(is.na(.x)))
+```
+좋은 소식입니다. 누락된 값이 없습니다.
+누락된 값이 많은 경우 적절한 대체를 위해 데이터 변환을 진행합니다.
+응답 변수가 얼마나 균형을 이루고 있는지 확인해 보겠습니다.
+
+```{r}
+round(prop.table(table(df$diagnosis)), 2)
+```
+
+반응변수가 약간 불균형합니다.
+
+변수의 상관관계를 찾아보겠습니다. 대부분의 ML 알고리즘은 예측 변수가 서로 독립적이라고 가정합니다.
+
+상관관계를 확인해 보겠습니다. 강력한 분석을 위해서는 다중 공선성을 제거하는 것이 좋습니다(상관 관계가 높은 예측 변수 제거라고도 함).
+
+```{r correlation_plot, fig.height=9, fig.width=9}
+df_corr <- cor(df %>% select(-id, -diagnosis))
+corrplot::corrplot(df_corr, order = "hclust", tl.cex = 1, addrect = 8)
+```
+
+실제로 상관관계가 있는 변수가 꽤 많습니다. 다음 단계에서는 `caret` 패키지를 사용하여 상관 관계가 높은 항목을 제거합니다.
+
+### Step 4 : Transform the data  
+
+```{r message=FALSE}
+library(caret)
+# The findcorrelation() function from caret package 상관관계가 높은 예측변수를 제거
+# 상관관계가 0.9 이상인 경우를 기준으로 합니다. 이 함수는 휴리스틱 알고리즘을 사용 
+# 맹목적으로 선택하는 대신 제거해야 할 변수를 결정
+df2 <- df %>% select(-findCorrelation(df_corr, cutoff = 0.9))
+
+# 원래 데이터 프레임의 열 수
+ncol(df)
+# 새로운 데이터 프레임의 열 수
+ncol(df2)
+```
+
+따라서 새로운 데이터 프레임 `df2`는 `r ncol(df) - ncol(df2)` 변수가 더 짧습니다.
+
+### Step 5 : Pre-process the data  
+#### Using PCA
+먼저 PCA 분석을 통해 비지도 분석을 진행해 보겠습니다.
+이를 위해 `id` 및 `diagnosis` 변수를 제거한 다음 변수의 크기를 조정하고 중앙에 배치합니다.
+
+```{r}
+# 주성분 분석 수행: 'id'와 'diagnosis' 열을 제외한 나머지 열에 대해 표준화 및 중심 조정
+preproc_pca_df <- prcomp(df %>% select(-id, -diagnosis), scale = TRUE, center = TRUE)
+
+# 주성분 분석 결과 요약
+summary(preproc_pca_df)
+```
+
+#### 결과 설명:
+
+- Importance of components: 각 주성분의 중요도
+- Standard deviation: 주성분의 표준 편차
+- Proportion of Variance: 설명된 분산의 비율
+- Cumulative Proportion: 누적 설명된 분산의 비율
+
+```{r}
+# 각 주성분의 분산 계산
+pca_df_var <- preproc_pca_df$sdev^2
+
+# 설명된 분산의 비율 계산
+pve_df <- pca_df_var / sum(pca_df_var)
+
+# 누적 설명된 분산 계산
+cum_pve <- cumsum(pve_df)
+
+# 주성분, 설명된 분산 비율, 누적 설명된 분산을 데이터프레임으로 정리
+pve_table <- tibble(comp = seq(1:ncol(df %>% select(-id, -diagnosis))), pve_df, cum_pve)
+
+# 설명된 분산의 누적 분포를 시각화
+ggplot(pve_table, aes(x = comp, y = cum_pve)) + 
+  geom_point() + 
+  geom_abline(intercept = 0.95, color = "red", slope = 0)
+
+```
+
+#### 시각화 설명:
+
+- 각 주성분(comp)에 따른 누적 설명된 분산(cum_pve)을 점으로 표시
+- 빨간색 점선은 누적 설명된 분산이 95%가 되는 지점을 나타냄
+
+원본 데이터 세트를 사용하면 분산의 95%가 10개의 PC로 설명됩니다.
+
+<br>
+
+상관관계가 높은 예측 변수를 제거한 두 번째 df에 대해 동일한 작업을 수행해 보겠습니다.   
+
+```{r}
+preproc_pca_df2 <- prcomp(df2, scale = TRUE, center = TRUE)
+summary(preproc_pca_df2)
+pca_df2_var <- preproc_pca_df2$sdev^2
+```
+
+#### 결과 설명:
+
+- Importance of components: 각 주성분의 중요도
+- Standard deviation: 주성분의 표준 편차
+- Proportion of Variance: 설명된 분산의 비율
+- Cumulative Proportion: 누적 설명된 분산의 비율
+
+```{r}
+# proportion of variance explained
+pve_df2 <- pca_df2_var / sum(pca_df2_var)
+cum_pve_df2 <- cumsum(pve_df2)
+pve_table_df2 <- tibble(comp = seq(1:ncol(df2)), pve_df2, cum_pve_df2)
+
+ggplot(pve_table_df2, aes(x = comp, y = cum_pve_df2)) + 
+  geom_point() + 
+  geom_abline(intercept = 0.95, color = "red", slope = 0)
+```
+
+#### 시각화 설명:
+
+- 각 주성분(comp)에 따른 누적 설명된 분산(cum_pve)을 점으로 표시
+- 빨간색 점선은 누적 설명된 분산이 95%가 되는 지점을 나타냄
+
+이 경우 약 8개의 PC가 분산의 95%를 설명했습니다.  
+
+<br>
+
+처음 2개 구성요소에 대해 가장 큰 영향을 미치는 변수를 시각화
+
+```{r pc1vspc2}
+library(ggfortify)
+autoplot(preproc_pca_df2, data = df,  colour = 'diagnosis',
+                    loadings = FALSE, loadings.label = TRUE, loadings.colour = "blue")
+```
+
+처음 3개의 구성 요소를 시각화
+
+```{r pc123_in_pairs}
+# 주성분 분석 결과를 데이터프레임에 추가 (주성분과 진단 정보)
+df_pcs <- cbind(as_tibble(df$diagnosis), as_tibble(preproc_pca_df2$x))
+
+# GGally 패키지의 ggpairs 함수를 사용하여 산점도 행렬 시각화
+GGally::ggpairs(df_pcs, columns = 2:4, ggplot2::aes(color = value))
+```
+
+위의 플롯에서 볼 수 있듯이 처음 3개의 주요 구성 요소는 두 클래스를 어느 정도만 분리하며, 이러한 구성 요소에 의해 설명되는 분산이 크지 않기 때문에 이는 예상됩니다.  
+
+### Step 6 : Using LDA
+LDA를 사용하면 다양한 클래스를 고려한다는 장점이 있습니다.  
+```{r}
+preproc_lda_df <- MASS::lda(diagnosis ~., data = df, center = TRUE, scale = TRUE)
+preproc_lda_df
+
+# 시각화 목적으로 LDA에서 df를 만듭니다.
+predict_lda_df <- predict(preproc_lda_df, df)$x %>% 
+  as_tibble() %>%  # as_data_frame()를 as_tibble()로 변경
+  cbind(diagnosis = df$diagnosis)
+
+```
+
+
+### Step 7 :  Model the data(데이터 모델링)
+먼저 `caret`을 사용하여 테스트 및 훈련 세트를 만들어 보겠습니다.
+
+```{r}
+set.seed(1815)
+
+# 데이터셋 생성 및 분할
+df3 <- cbind(diagnosis = df$diagnosis, df2)
+df_sampling_index <- createDataPartition(df3$diagnosis, times = 1, p = 0.8, list = FALSE)
+df_training <- df3[df_sampling_index, ]
+df_testing <-  df3[-df_sampling_index, ]
+
+# 교차 검증을 위한 제어 매개변수 설정
+df_control <- trainControl(
+  method = "cv",
+  number = 15,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+)
+
+```
+
+<br>
+
+### Logistic regression
+
+```{r message=FALSE, warning=FALSE}
+# glm 모델 학습
+model_logreg_df <- train(
+  diagnosis ~ .,
+  data = df_training,
+  method = "glm",
+  metric = "ROC",
+  preProcess = c("scale", "center"),
+  trControl = df_control
+)
+
+# glm 모델 예측 및 혼동 행렬 생성
+prediction_logreg_df <- predict(model_logreg_df, df_testing)
+cm_logreg_df <- confusionMatrix(prediction_logreg_df, df_testing$diagnosis, positive = "M")
+cm_logreg_df
+
+```
+
+`glmnet` 패키지를 사용합니다. `glmnet`은 여러 선형 알고리즘을 통합하므로 항상 고려해야 합니다.
+
+```{r message=FALSE, warning=FALSE}
+# glmnet 모델 학습
+model_glmnet_df <- train(
+  diagnosis ~ .,
+  data = df_training,
+  method = "glmnet",
+  metric = "ROC",
+  preProcess = c("scale", "center"),
+  tuneLength = 20,
+  trControl = df_control
+)
+
+# glmnet 모델 예측 및 혼동 행렬 생성
+prediction_glmnet_df <- predict(model_glmnet_df, df_testing)
+cm_glmnet_df <- confusionMatrix(prediction_glmnet_df, df_testing$diagnosis, positive = "M")
+cm_glmnet_df
+
+```
+
+caret 패키지의 varImp 함수를 사용하여 glmnet 모델의 변수 중요도를 계산
+
+```{r}
+plot(varImp(model_glmnet_df), top = 10, main = "glmnet")
+```
+
+결과 그래프는 glmnet 모델에서 상위 10개 변수의 중요도를 보여줍니다. 중요도는 변수가 모델의 예측에 얼마나 기여하는지를 나타냅니다. 그래프를 통해 각 변수의 상대적인 중요도 및 그 중에서 가장 중요한 변수들을 확인할 수 있습니다.
+
+<br>
+
+### Random Forest 
+
+```{r message=FALSE, warning=FALSE}
+model_rf_df <- train(diagnosis ~., data = df_training,
+                     method = "rf", 
+                     metric = 'ROC', 
+                     trControl = df_control)
+
+prediction_rf_df <- predict(model_rf_df, df_testing)
+cm_rf_df <- confusionMatrix(prediction_rf_df, df_testing$diagnosis, positive = "M")
+cm_rf_df
+```
+
+```{r randomforest_model_plot}
+library(randomForest)
+
+plot(model_rf_df)
+plot(model_rf_df$finalModel)
+varImpPlot(model_rf_df$finalModel)
+plot(varImp(model_rf_df), top = 10, main = "Random forest")
+```
+
+<br>
+
+### KNN
+
+```{r}
+model_knn_df <- train(diagnosis ~., data = df_training, 
+                      method = "knn", 
+                      metric = "ROC", 
+                      preProcess = c("scale", "center"), 
+                      trControl = df_control, 
+                      tuneLength =31)
+
+plot(model_knn_df)
+
+prediction_knn_df <- predict(model_knn_df, df_testing)
+cm_knn_df <- confusionMatrix(prediction_knn_df, df_testing$diagnosis, positive = "M")
+cm_knn_df
+```
+
+```{r}
+plot(varImp(model_knn_df), top = 10, main = "KNN")
+```
+
+
+### Support Vector Machine(SVM) 
+```{r message=FALSE}
+model_svm_df <- train(diagnosis ~., data = df_training, method = "svmRadial", 
+                      metric = "ROC", 
+                      preProcess = c("scale", "center"), 
+                      trace = FALSE, 
+                      trControl = df_control)
+
+prediction_svm_df <- predict(model_svm_df, df_testing)
+cm_svm_df <- confusionMatrix(prediction_svm_df, df_testing$diagnosis, positive = "M")
+cm_svm_df
+```
+
+### Neural Network with LDA
+
+* Linear Discriminant Analysis (LDA)를 사용하여 특성을 변환하고, 이를 입력으로 사용하는 Neural Network 모델
+LDA 사전 처리 단계를 사용하려면 동일한 훈련 및 테스트 세트도 만들어야 합니다.
+```{r}
+# LDA 변환을 위한 학습 데이터 생성
+lda_training <- predict_lda_df[df_sampling_index, ]
+# LDA 변환을 위한 테스트 데이터 생성
+lda_testing <- predict_lda_df[-df_sampling_index, ]
+
+# Neural Network 모델 학습 설정
+model_nnetlda_df <- train(
+  diagnosis ~ .,                  # 예측 변수 및 설명 변수 설정
+  lda_training,                   # 학습 데이터
+  method = "nnet",                # Neural Network 모델 선택
+  metric = "ROC",                 # 평가 지표 설정
+  preProcess = c("center", "scale"),  # 데이터 전처리 설정 (중앙화 및 표준화)
+  tuneLength = 10,                # 튜닝을 위한 반복 횟수
+  trace = FALSE,                  # 학습 중 메세지 표시 여부
+  trControl = df_control          # 교차 검증 및 설정
+)
+
+# 테스트 데이터에 대한 Neural Network 모델 예측
+prediction_nnetlda_df <- predict(model_nnetlda_df, lda_testing)
+# Confusion Matrix 생성
+cm_nnetlda_df <- confusionMatrix(
+  prediction_nnetlda_df,          # 예측 결과
+  lda_testing$diagnosis,          # 실제 클래스
+  positive = "M"                  # 양성 클래스 설정
+)
+
+# 결과 출력
+cm_nnetlda_df
+```
+<br>
+
+### Step 8 : Models evaluation 
+
+```{r}
+# 다양한 모델의 리스트 생성
+model_list <- list(
+  logisic = model_logreg_df,         # 로지스틱 회귀 모델
+  glmnet = model_glmnet_df,          # glmnet 모델
+  rf = model_rf_df,                  # Random Forest 모델
+  svm = model_svm_df,                # SVM 모델
+  Neural_with_LDA = model_nnetlda_df # LDA와 Neural Network를 결합한 모델
+)
+
+# 모델들에 대한 교차 검증 수행 및 결과 저장
+results <- resamples(model_list)
+```
+
+
+```{r}
+# 결과 요약
+summary(results)
+```
+* summary(results): 교차 검증 결과에 대한 요약 통계를 출력합니다. 각 모델에 대한 평균 및 표준편차와 같은 성능 지표를 확인할 수 있습니다.
+
+```{r}
+# 각 모델의 ROC 곡선에 대한 비교를 Box-and-Whisker 플롯으로 시각화
+bwplot(results, metric = "ROC")
+```
+* bwplot(results, metric = "ROC"): 각 모델의 ROC 곡선에 대한 비교를 Box-and-Whisker 플롯으로 나타냅니다. 이를 통해 모델 간 성능 차이를 시각적으로 확인할 수 있습니다.
+
+```{r}
+# 각 모델의 ROC 곡선에 대한 비교를 Dot 플롯으로 시각화
+dotplot(results)
+```
+* dotplot(results): 각 모델의 ROC 곡선에 대한 비교를 Dot 플롯으로 나타냅니다. 각 모델의 성능을 더 자세히 비교할 수 있습니다.
+
+<br>
+
+#### 결과 해석 마무리
+- The logistic and SVM model은 신뢰성을 갖추기 위해 많은 가변성을 가지고 있음
+- The glmnet and Neural Network with LDA pre-processing 은 최상의 결과를 제공
+- The ROC metric 각 모델의 ROC 곡선의 auc를 측정
+- 이 측정항목은 모든 임계값과 무관
+- 테스트 데이터 세트에서 이러한 모델이 어떻게 결과를 얻었는지 기억해 봅시다. 
+
+예측 클래스는 기본적으로 임계값 0.5로 얻어지는데, 이는 이와 같은 불균형 데이터 세트에서는 최고가 될 수 없습니다.
+
+```{r}
+cm_list <- list(cm_rf = cm_rf_df, cm_svm = cm_svm_df,
+                cm_logisic = cm_logreg_df, cm_nnet_LDA = cm_nnetlda_df)
+
+results <- map_df(cm_list, function(x) x$byClass) %>% as_tibble() %>%
+  mutate(stat = "Overall")
+
+results
+
+```
+
+sensitivity(detection of breast cases / 유방 사례 감지)에 대한 최상의 결과는 F1 score 높은 LDA_NNET입니다.
+
+<br>
+
+결론적으로 우리는 아래 3가지를 Breast_Cancer 데이터에 대해서 great models라고 할수 있다.
+
+1. random forest 
+2. LDA with neural net 
+3. glmnet
+
+<br>
+
+## References  
+A useful popular kernel on this dataset on [Kaggle](https://www.kaggle.com/lbronchal/breast-cancer-dataset-analysis)
+Another one, also on [Kaggle](https://www.kaggle.com/sonicboom8/breast-cancer-data-with-logistic-randomforest)
+And [another one](https://www.kaggle.com/murnix/cluster-rf-boosting-svm-accuracy-97-auc-0-96/notebook), especially nice to compare models.
+
+<br>
+
