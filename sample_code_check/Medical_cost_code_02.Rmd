@@ -1,0 +1,203 @@
+---
+title: "Medical_Cost_code_02"
+author: "Nam, Yeong-jae"
+date: "`r Sys.Date()`"
+output: 
+    prettydoc::html_pretty:
+      theme: leonids
+      toc: yes
+---
+***
+필요패키지: `ggplot2`, `dplyr`, `Hmisc`, `cowplot`, `WVPlots`
+
+
+## 0. Package 불러오기기
+```{r}
+library(ggplot2)
+library(dplyr)
+library(Hmisc) # 기술, 추론통계분석 패키지
+library(cowplot) # ggplot을 합쳐서 그릴 수 있는 패키지지
+library(WVPlots) 
+
+# WVPlots는 ggplot2와 plotly를 기반
+# ROC: 모델 성능 확인
+# Gain Curve: 마케팅, 예측 모델에서 사용되며, 누적 이득 시각화해 모델의 성능 확인
+# Scatter plot with marginal Distribution: 두 변수 간의 산점도와 주변분포를 같이 보여줌
+# Conditional Scatter Plot with marginal densities: 조건도 산점도와 주변분포를 보여줌
+# Box and stem with matching Theoretical Distribution: 상자수염그림? 과 함께 이론적 분포와 일치하는 그림을 생성하여 데이터를 시각화
+# Density with matching Theoretical Distribution: 밀도분포(함수)를 이론 분포와 함께 시각화
+```
+
+<br><br>
+
+## 1. Data 이해하기.
+```{r}
+set.seed(123)
+Data = read.csv(".\\data\\medical_cost.csv")
+sample_n(Data, 5)
+```
+```{}
+# Age: 보험가입자의 나이
+# Sex: 보험가입자의 성별
+# BMI: 보험가입자의 BMI 지수
+# Children: 부양비를 감당할 자식의 수
+# Smoker: 흡연 여부
+# Region: 보험 수혜자 거주 지역(4가지)
+# Charge: 보험에서 청구되는 개인의 의료비용(predicted value)
+```
+```{r}
+describe(Data) # data를 간결하게 확인하니 missing value가 없네요.
+```
+
+## 3. EDA(탐색적 데이터 분석)
+### 3.1 상관관계 Charge - Age/BMI
+```{r}
+x = ggplot(Data, aes(age, charges)) + geom_jitter(color = "blue", alpha = 0.5) + theme_light()
+
+y = ggplot(Data, aes(bmi, charges)) + geom_jitter(color="green", alpha=0.5) + theme_light()
+
+p = plot_grid(x, y) # plot_grid()는 여러 plot들을 하나의 grid로 재배치하는 함수. 
+title = ggdraw() + draw_label("1. Correlation between Charges and Age/BMI", fontface='bold') # ggdraw는 ggplot 상단에 layer를 한층 그리는 것
+# ggdraw로 생긴 layer에 draw_label로 라벨을 그려준다.
+plot_grid(title, p, ncol=1, rel_heights= c(0.1, 1)) # 하나의 열에 입력된 plot layer를 순서대로 쌓아준다.
+```
+> 나이와 BMI가 증가하면 charge도 증가하는 추세
+
+<br>
+
+### 3.2 상관관계 Charges - Sex/Children coverd by insurance
+
+```{r}
+x = ggplot(Data, aes(sex, charges, color=sex)) + geom_jitter(alpha=0.5) + theme_light()
+y = ggplot(Data, aes(children, charges, color = children)) + geom_jitter(alpha=0.5) + theme_light()
+
+p = plot_grid(x, y)
+title = ggdraw() + draw_label("2. Correlation between Charges and Sex/Children coverd by insurance", fontface = 'bold')
+
+plot_grid(title, p, ncol = 1, rel_heights = c(0.1, 1))
+```
+> 아이의 수가 많으면 감당하는 부양비가 줄어드는 것처럼 보인다.
+
+<br>
+
+### 3.3 상관관계 Charge - Smoker/Region
+```{r}
+x = ggplot(Data, aes(smoker, charges, color=smoker)) + geom_jitter(alpha=0.5) + theme_light()
+y = ggplot(Data, aes(region, charges, color = region)) + geom_jitter(alpha=0.5) + theme_light()
+
+p = plot_grid(x, y)
+title = ggdraw() + draw_label("3. Correlation between Charges and Smoker/Region", fontface='bold')
+plot_grid(title, p, ncol=1, rel_heights=c(0.1,1))
+```
+> 담배피는 사람들이 의료비용이 높다는 것이 확인된다. 지역에 의해서는 그케 차이가 보이지 않는다.
+
+## 4. Linear Regression Model 
+### preparation and splititng the data
+```{r}
+# 데이터의 70%를 train data로 사용
+n_train = round(0.7*nrow(Data))
+
+# sampling을 통해서 데이터를 training data를 만드는 과정
+train_indices = sample(1:nrow(Data), n_train)
+Data_train = Data[train_indices,]
+Data_test = Data[-train_indices,]
+
+# training과 validation data을 7:3으로 구성
+
+formula_0 = as.formula("charges ~ age + sex + bmi + children + smoker + region")
+```
+
+<br>
+
+### Train and Test model
+```{r}
+# train model
+model_0 = lm(formula_0, data=Data_train)
+summary(model_0)
+```
+```{r}
+# 결정계수
+r_sq_0 = summary(model_0)$r.squared
+
+# test Data를 이용해서 예측
+prediction_0 = predict(model_0, newdata = Data_test)
+
+residuals_0 = Data_test$charges - prediction_0
+
+rmse_0 = sqrt(mean(residuals_0^2))
+```
+> 성별 변수가 유의하지 않은 것을 확인. 흡연 변수는 비용에 크게 영향을 주는 것이 확인. 이에 유의하지 않은 변수를 제거해서 모델링을 다시 해서 성능이 좋아지는지 진행.
+
+<br>
+
+### Training and Test New Model
+```{r}
+# age를 제외하고서 다시 진행
+formula_1 = as.formula("charges ~ age + bmi + children + smoker + region")
+
+model_1 = lm(formula_1, data = Data_train)
+summary(model_1)
+```
+```{r}
+# 결정계수
+r_sq_1 = summary(model_1)$r.squared
+
+# test data를 이용해서 예측
+prediction_1 = predict(model_1, newdata = Data_test)
+
+residuals_1 = Data_test$charges - prediction_1
+
+rmse_1 = sqrt(mean(residuals_1^2))
+```
+
+### compare two model
+```{r}
+print(paste0("R-squared for first model: ", round(r_sq_0, 4)))
+print(paste0("R-squared for second model: ", round(r_sq_1, 4)))
+print(paste0("RMSE for first model: ", round(rmse_0, 4)))
+print(paste0("RMSE for second model: ", round(rmse_1, 4)))
+```
+> 첫 모델과 sex변수를 빼고 한 모델 간의 차이가 아주 조금 있다.
+
+<br><br>
+
+## 5. Model Performance
+```{r}
+Data_test$prediction = predict(model_1, newdata = Data_test)
+
+ggplot(Data_test, aes(x=prediction, y=charges)) +
+  geom_point(color="blue", alpha=0.7) + geom_abline(color="red") +
+  ggtitle("Prediction vs. Real values") +
+  theme_classic()
+
+# 예측이 잘된건가? 모르겠네~
+```
+
+<br>
+
+```{r}
+Data_test$residuals = Data_test$charges - Data_test$prediction
+
+ggplot(data = Data_test, aes(x=prediction, y=residuals)) +
+  geom_pointrange(aes(ymin=0, ymax=residuals), color='blue') +
+  geom_hline(yintercept = 0, linetype=3, color='red') +
+  ggtitle("Residual vs. Linear model prediction") +
+  theme_classic()
+```
+<br><br>
+
+```{r}
+ggplot(Data_test, aes(x=residuals)) + geom_histogram(bins=15, fill='blue') + ggtitle("Histogram of residuals") + theme_classic()
+```
+
+<br><br>
+
+```{r}
+GainCurvePlot(Data_test, "prediction", "charges", "Model")
+
+# gain 차트는 데이터의 분류문제에서 성능을 측정하는 지표다. 예측 결과와 실제 결과를 비교해서 성능을 측정.
+# 이진분류에서 성능평가에 사용도 가능
+# 멀티클래스 분류 문제에서도 클래스 간의 순위를 평가하는데도 적용가능.
+
+```
+
