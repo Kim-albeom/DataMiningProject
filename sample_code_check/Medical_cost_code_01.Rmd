@@ -1,0 +1,420 @@
+---
+title: "Medical_Cost_code_01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Medical Cost analysis
+
+### 0. Introduction
+
+본 분석의 목적은 환자의 특정 특성을 고려하여 특정 시점에 환자에게 발생할 수 있는 의료 비용을 예측할 수 있는 `ML 모델`을 제안하는 것입니다. 이 노트북은 주요 하이퍼 매개변수를 조정하여 `Random Forest` 모델을 사용하는 데만 중점을 둡니다.
+
+데이터는 유명한 데이터 과학자 커뮤니티[Kaggle](https://www.kaggle.com/datasets/mirichoi0218/insurance?datasetId=13720&sortBy=voteCount&searchQuery=random+forest&언어=R)에서 가져왔으며 [Tidymodels](https://www.tidymodels.org/)에서 제공하는 패키지입니다.
+
+```{r include=FALSE}
+# Packages 
+pacman::p_load(tidyverse, tidymodels, themis, data.table, skimr, GGally, patchwork, rlang, ggforce, gt, metrica, vip)
+
+# install.packages("doParallel")
+# install.packages("tidymodels")
+
+# Avoid conflicts between functions
+tidymodels_prefer()
+
+# Import data
+# setwd("D:/10 - Proyectos/01 - Rpubs Definitos/06 - Hiperparámetros Random Forest")
+
+insurance <- 
+  read_csv(file = "./data/medical_cost.csv", show_col_types = F) %>% 
+  mutate_if(.predicate = is.character, .funs = factor)
+```
+
+<br>
+
+#### Columns description
+
+There are 7 columns in the data, which are described below:
+
+- Age : 주요 수혜자의 연령
+- Sex: 보험 계약자 성별(여성 또는 남성)
+- BMI: 체질량 지수
+- Children : 건강보험 적용 자녀 수 / 부양가족 수
+- Smoker : 흡연 상태
+- Region: 미국 내 수혜자의 거주 지역(북동부, 남동부, 남서부 또는 북서부)
+- Charges : 건강보험에서 청구하는 개인의료비
+  
+<br>  
+
+<br>
+  
+### 1. Exploratory data analysis(EDA)
+
+모든 유형의 모델 설정을 시작하기 전에 데이터를 탐색하여 누락된 값과 같은 불일치가 있는지 확인하고 응답 변수가 다른 모든 변수에 의해 어떻게 영향을 받는지 약간 이해해야 합니다.
+
+#### Dataset overview(데이터 개요)
+
+`skimr` 패키지의 `skim function`을 사용하면 데이터의 모든 변수에 대한 개요를 얻을 수 있습니다.
+
+```{r echo=FALSE}
+skim_without_charts(data = insurance)
+```
+
+따라서 모든 변수에 누락된 값이 없습니다. 평균적으로 모든 피보험자에게는 자녀가 한 명 이상 있고, 자녀가 없는 사람도 많지만 일반적으로 데이터에 등록된 사람들은 비만(bmi >= 30은 [비만]으로 분류됩니다)(https: //www.texasheart.org/heart-health/heart-information-center/topics/calculadora-del-index-de-mass-corporal-bmi/))
+
+#### Distribution of medical charges (진료비 분포)
+
+피보험자가 부담하는 의료비의 경험적(empirical) 분포를 살펴보자.
+
+```{r echo=FALSE, fig.align='center', warning=FALSE}
+ggplot(data = insurance, aes(x = charges, stat(density))) + 
+  geom_histogram(fill = "midnightblue", alpha = 0.7, color = "white", bins = 40) +
+  geom_density(aes(x = charges), color = "firebrick", size = 1) +
+  geom_vline(aes(xintercept = mean(charges)), color = "blue", linetype = "dashed", size = 1) +
+  labs(x = "Individual Medical cost", y = "") +
+  scale_x_continuous(labels = dollar_format(scale = 1e-3, suffix = "K")) +
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  theme(axis.text.x = element_text(color = "black", size = 11), 
+        text = element_text(color = "black"))
+```
+
+금전적 금액이나 소득을 나타내는 모든 변수는 예상대로 분포가 오른쪽으로 치우쳐 있습니다. 데이터를 정규화하고 분산을 안정화하기 위해 로그 변환을 진행합니다.
+
+```{r echo=FALSE, fig.align='center'}
+ggplot(data = insurance, aes(x = log(charges), stat(density))) + 
+  geom_histogram(fill = "midnightblue", alpha = 0.7, color = "white", bins = 40) +
+  geom_vline(aes(xintercept = mean(log(charges))), color = "blue", linetype = "dashed", size = 1) + 
+  geom_density(aes(x = log(charges)), color = "firebrick", size = 1)+
+  labs(x = "Log(Individual Medical cost)") +
+  scale_x_continuous(labels = dollar) +
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  theme(axis.text.x = element_text(color = "black", size = 11), 
+        text = element_text(color = "black"))
+```
+
+#### Categorical variables(범주형 변수)
+
+다음으로 범주형 변수와 반응 변수 간의 관계를 살펴봅니다. 목표는 모델이 포착할 패턴이 될 중앙값의 변화를 찾는 것입니다.
+
+```{r include=FALSE}
+# Boxplot function
+box_plot <- function(x, xlab){
+  ggplot(data = insurance, aes(x = {{x}}, y = log(charges))) + 
+    geom_boxplot(outlier.colour = "firebrick", fill = "deepskyblue2", outlier.alpha = 1 / 8) +
+    geom_jitter(color = "black", size = 1, alpha = 1 / 9) +
+    scale_y_continuous(labels = dollar) + 
+    labs(x = xlab, y = "Log(Individual Medical cost)") +
+    theme_bw() +
+    theme(axis.text.x = element_text(color = "black", size = 11), 
+          text = element_text(color = "black"))
+}
+```
+
+#### insured(피보험자)의 성별
+insured(피보험자) : 보험의 대상이 되는 사람
+
+```{r echo=FALSE, fig.align='center'}
+box_plot(x = sex, xlab = "Insured Sex")
+```
+
+피보험자의 성별에 따른 관련 변화는 관찰되지 않습니다.
+
+#### Active smoking status
+
+```{r echo=FALSE, fig.align='center'}
+box_plot(x = smoker, xlab = "Active Smoking Status")
+```
+
+피보험자가 흡연을 하면 의료비가 더 많이 나올 것으로 예상됩니다. 흡연이 건강에 영향을 미치고 신체에도 영향을 미치기 때문에 이 진술은 분명한 것 같습니다.
+
+피보험자의 성별과 현재 흡연자인지 여부 사이에 어떤 관계가 있습니까?
+
+```{r echo=FALSE, fig.align='center'}
+box_plot(x = sex, xlab = "Active Smoking Status") +
+  facet_wrap(vars(smoker))
+```
+
+피보험자의 의료 비용과 관련하여 이러한 변수에는 상호 작용이 관찰되지 않습니다
+
+#### Region of residence
+
+```{r echo=FALSE, fig.align='center'}
+box_plot(x = region, xlab = "Residential Area in the US")
+```
+
+피보험자의 거주 지역에 대한 반응 변수에는 관련 변화가 관찰되지 않았습니다.
+
+#### Number of children
+
+```{r echo=FALSE, fig.align='center'}
+box_plot(x = factor(children), xlab = "Number of Children")
+```
+
+대부분의 피보험자들은 보험에 가입한 자녀가 0명에서 1명 사이인 것으로 보이지만 이는 각 피보험자가 부담하는 의료비와 관련이 없는 것으로 보입니다.
+
+#### Numeric variables
+
+다음으로 numerical variables(수치변수) 와 response variable(반응변수)의 관계를 탐색
+
+##### Age of the insured
+
+```{r echo=FALSE, fig.align='center', message=FALSE}
+ggplot(data = insurance, aes(x = age, y = log(charges))) + 
+  geom_point(color = "midnightblue", alpha = 1/2) +
+  geom_smooth(method = "lm", color = "firebrick", formula = "y ~ x") +
+  labs(x = "Age") +
+  theme_bw()
+```
+
+가입자 연령과 의료비 사이에는 양의 선형 관계가 관찰되었으나, 이전 그래프를 보면 흡연 여부가 반응 변수에 큰 영향을 미치는 것으로 나타났습니다.
+
+이것과 피보험자의 연령 사이에 어떤 관계가 있습니까?
+
+```{r echo=FALSE, fig.align='center', message=FALSE}
+ggplot(data = insurance, aes(x = age, y = log(charges), color = smoker)) + 
+  geom_point(color = "midnightblue", alpha = 1/2) +
+  geom_smooth(method = "lm", formula = "y ~ x") +
+  facet_wrap(vars(smoker)) +
+  labs(x = "Age") +
+  theme_bw()
+```
+
+`평균 의료 비용`의 차이를 보여주는 이러한 변수 사이에는 `interactions(상호작용)`이 있습니다. 모델에서 이 `interactions` 을 사용하는 것이 좋습니다.
+
+##### Body mass index(BMI)
+
+```{r echo=FALSE, fig.align='center', message=FALSE}
+ggplot(data = insurance, aes(x = bmi, y = log(charges), color = smoker)) + 
+  geom_point(color = "midnightblue", alpha = 1/2) +
+  geom_smooth(method = "lm", formula = "y ~ x") +
+  facet_wrap(vars(smoker)) +
+  labs(x = "Body Mass Index") +
+  theme_bw()
+```
+
+이전 단계와 마찬가지로 여기에서도 의료 비용과 관련하여 이러한 변수들 사이에 또 다른 명백한 상호 작용이 있는 것으로 보입니다.
+
+<br>
+
+### 2.  Split data
+
+#### Training and testing sets
+
+사용 가능한 모든 데이터를 사용하여 지도 학습 모델을 수행하는 것은 일반적으로 `overfitting(과적합)` 문제를 일으키기 때문에 좋은 선택이 아닙니다. 데이터를 두 개의 세트로 분할하는 것이 좋습니다. 하나는 모델을 훈련하고 다른 하나는 모델을 테스트하는 데 사용됩니다. 이를 통해 새로운 데이터에 대한 모델의 성능을 알 수 있습니다.
+
+```{r echo=TRUE}
+# Split 80% / 20%
+set.seed(123)
+split <- initial_split(data = insurance, prop = 0.80, strata = charges)
+
+# Training set
+train_set <- training(split)
+
+# Testing set
+test_set <- testing(split)
+```
+
+#### Cross validation
+
+데이터를 훈련 세트와 테스트 세트로 분할하는 것 외에도 훈련 세트는 5개의 데이터 하위 집합으로 분할되므로 하이퍼파라미터 조정 프로세스의 결과를 훈련하고 측정하기 위한 다양한 partitions(파티션)을 가질 수 있습니다.
+
+```{r echo=TRUE}
+set.seed(123)
+folds <- vfold_cv(train_set, strata = charges, v = 5)
+```
+
+#### Feature engineering
+
+탐색적 분석에서 관찰된 내용을 바탕으로 `feature engineering`을 사용한 전처리를 통해 `recipe`가 생성됩니다
+
+<br>
+
+### 3. Preprocessing `recipe`
+
+데이터 전처리 `recipe`에 포함될 단계는 아래에 설명되어 있습니다.
+
+   - response variable(반응변수)에 대해 로그변환을 수행한다.
+   - 피보험자가 체질량지수에 따라 비만으로 분류될 수 있는지 여부를 나타내는 새로운 categorical variable(범주형 변수)가 생성됩니다.
+   - 모든 예측 변수가 정규화되었습니다.
+   - 모든 범주형 변수는 Dummy로 변환됩니다.
+   - 마지막으로 데이터의 탐색적 분석에서 관찰된 interactions(상호작용)이 생성됩니다.
+
+```{r echo=TRUE}
+recipe <- 
+  recipe(charges ~ ., data = train_set) %>% 
+  step_log(all_outcomes()) %>% 
+  step_mutate(is_obsessive = 
+                if_else(bmi > 30, "Yes", "No") %>% 
+                factor(levels = c("Yes", "No"))) %>% 
+  step_normalize(all_numeric_predictors()) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_interact(terms = ~ smoker_yes:age) %>% 
+  step_interact(terms = ~ smoker_yes:bmi)
+```
+
+#### Hyperparameter tuning
+
+우리는 이미 데이터 전처리가 포함된 `recipe`를 가지고 있으므로 `Random Forest` 모델의 workflow 와 조정할 수 있는 하이퍼파라미터의 가능한 모든 조합을 갖춘 그리드만 설정하면 됩니다.
+
+조정할 세 가지 주요 하이퍼 매개변수는 다음과 같습니다.
+
+  - mtry: 트리 모델을 생성할 때 각 분할에서 무작위로 샘플링될 예측변수 수에 대한 정수입니다.
+  - tree: 앙상블에 포함된 나무 수에 대한 정수입니다.
+  - min_n: 노드를 추가로 분할하는 데 필요한 노드의 최소 데이터 포인트 수에 대한 정수입니다.
+
+<br>
+  
+### 4. Model spec(모델 사양)
+
+```{r echo=TRUE}
+# Random forest spec (랜덤 포레스트의 사양 정의)
+rf_spec <- rand_forest(
+  mtry = tune(),      # 튜닝 파라미터: mtry (분할할 변수의 개수)
+  trees = tune(),     # 튜닝 파라미터: trees (나무의 개수)
+  min_n = tune()       # 튜닝 파라미터: min_n (리프 노드의 최소 관측치 개수)
+) %>%
+  set_engine(
+    "ranger",          # 사용할 엔진 (ranger 패키지 사용)
+    num.threads = 7,   # 병렬 처리할 스레드의 개수
+    importance = "impurity"  # 변수 중요도 계산 방법
+  ) %>%
+  set_mode("regression")  # 모델의 종류: 회귀 모델
+
+# Ranfom forest workflow
+rf_Wf <- workflow() %>% 
+  add_recipe(recipe) %>%   # 데이터 전처리 및 특성 공학을 담당하는 recipe 객체 추가
+  add_model(rf_spec)       # 랜덤 포레스트 모델 사양을 워크플로우에 추가
+```
+
+#### Setting grid
+
+하이퍼파라미터에 대해 가능한 값의 그리드를 설정하기 위해 공간을 채우는 방법이 사용됩니다. 자세한 내용은 (https://www.tmwr.org/grid-search.html)
+
+```{r echo=TRUE}
+# Space-filling designs grid
+rf_grid <- 
+  grid_latin_hypercube(
+    min_n(), 
+    mtry(range = c(4, 9)), 
+    trees(), 
+    size = 80)
+```
+
+이제 grid를 visualize(시각화) 해 보겠습니다.
+
+```{r echo=FALSE, fig.align='center'}
+rf_grid %>% 
+  ggplot(aes(x = .panel_x, y = .panel_y)) + 
+  geom_point(color = "midnightblue") +
+  geom_blank() +
+  facet_matrix(vars(min_n, mtry, trees), layer.diag = 2) + 
+  labs(title = "Latin Hypercube design with 80 candidates") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = .5))
+```
+
+#### Tuning Hyperparameters
+
+```{r echo=TRUE}
+# Lets use 7 cores for this process
+doParallel::registerDoParallel(cores = 7)
+
+set.seed(123)
+tune_res <- 
+  rf_Wf %>% 
+  tune_grid(
+    resamples = folds, grid = rf_grid, 
+    metrics = metric_set(rmse, mae, rsq)
+    )
+```
+
+이제 tuning results를 visualize 해 보겠습니다.
+
+```{r echo=FALSE, fig.align='center'}
+autoplot(tune_res, metric = c("rmse", "rsq")) +
+  theme_bw() +
+  labs(title = "Random Forest Tuning Results") +
+  theme(plot.title = element_text(hjust = .5))
+```
+
+`root mean square error`를 최소화하기 위한 최적의 5개 모델입니다.
+
+```{r echo=FALSE}
+show_best(x = tune_res, metric = "rmse", n = 5) %>% 
+  select(.config, .metric, mtry, trees, min_n, mean) %>% 
+  gt()
+```
+
+coefficient of determination(결정계수)를 최대화하기 위한 최고의 5개 모델입니다.
+
+```{r echo=FALSE}
+show_best(x = tune_res, metric = "rsq", n = 5) %>% 
+  select(.config, .metric, mtry, trees, min_n, mean) %>% 
+  gt()
+```
+
+두 가지 접근법 모두에서 동일한 parameters(매개변수) 조합이 얻어지는 것으로 보입니다.
+
+<br>
+
+### 6. Final Model
+
+```{r echo=TRUE}
+# finalize model set up
+final_rf <- rf_Wf %>% 
+  finalize_workflow(
+    show_best(x = tune_res, metric = "rmse", n = 1)
+  )
+```
+
+이제 성능을 확인하기 위해 최종 모델을 테스트 세트에 맞춰 보겠습니다.
+
+```{r}
+final_rs <-
+  final_rf %>%
+  last_fit(
+    split, metrics = metric_set(rmse, mae, rsq)
+    )
+```
+
+관찰된 값과 예측된 값 사이의 일치를 시각적으로 평가하는 가장 쉬운 방법은 scatterplot(산점도)를 사용하는 것입니다. 
+
+```{r echo=FALSE, fig.align='center'}
+scatter_plot(
+  data = collect_predictions(final_rs),
+  obs = charges,
+  pred = .pred, 
+  metrics_list = c("R2", "RMSE", "MAE"),
+  print_metrics = T,
+  position_metrics = c(x = 7, y = 11)) +
+  labs(title = "Performance on Testing Set") +
+  scale_x_continuous(labels = dollar) +
+  scale_y_continuous(labels = dollar) +
+  theme(plot.title = element_text(face = "bold", size = rel(1.25), hjust = .5))
+```
+
+좋아 보이지만 어떤 사람들에게는 모델이 값을 과소평가하는 경향이 있는 것 같습니다.
+
+<br>
+
+### 7. Variable importance determination
+변수 중요도 결정
+```{r echo=FALSE, fig.align='center'}
+vip(final_rs %>% 
+    extract_fit_parsnip(), 
+    geom = "col", 
+    aesthetics = list(color = "black", 
+                      fill = "midnightblue", 
+                      alpha = .5)) +
+  theme_bw() +
+  labs(title = "Random Forest Variable Importance")
+```
+
+위의 그래프를 통해 피보험자의 연령과 흡연상태가 의료비를 예측하는 주요 변수임을 알 수 있다. 또한 변수 간의 상호작용은 관련성이 있는 것으로 보이며, 데이터의 탐색적 분석에서 관찰된 바와 같이 성별과 피보험자가 위치한 지역은 관련성이 없는 것으로 보입니다.
+
+<br>
