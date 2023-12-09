@@ -7,7 +7,9 @@ output: html_document
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 ```
 
-## 0. usage library
+## Breast_cancer analysis
+
+### Step 0 : usage library
 설치 안된 라이브러리의 경우 설치 필요
 ```{r}
 library(PerformanceAnalytics)
@@ -34,13 +36,16 @@ library(stringr)
 library(knitr)
 ```
 
+<br>
 
-## 1. Intro & Purpose
+### Step 1: Intro & Purpose
 * 이 커널에서 많은 분류 방법을 사용
 * 각 함수를 더 잘 이해하기 위해 함수 바로 위에 라이브러리를 작성
 
-## 2. Data Importing & Cleaning & Inspecting
-### 2-1) Import dataset
+<br>
+
+### Step 2: Data Importing & Cleaning & Inspecting
+#### 2-1) Import dataset
 breast_cancer_data means 'wisconsin breast cancer data'
 ```{r}
 breast_cancer_data <- read.csv("./data/breast_cancer.csv", header=T, stringsAsFactors=F)
@@ -48,12 +53,12 @@ breast_cancer_data <- read.csv("./data/breast_cancer.csv", header=T, stringsAsFa
 tail(breast_cancer_data)
 ```
 
-### 2-2) Remove NULL Data
+#### 2-2) Remove NULL Data
 ```{r}
 breast_cancer_data$X <- NULL
 ```
 
-### 2-3) Reshape the datasets
+#### 2-3) Reshape the datasets
 ```{r}
 # breast_cancer_data 첫 번째 열을 제외한 모든 열로 구성
 breast_cancer_data <- breast_cancer_data[,-1]
@@ -63,14 +68,28 @@ breast_cancer_data <- breast_cancer_data[,-1]
 breast_cancer_data$diagnosis <- factor(ifelse(breast_cancer_data$diagnosis=="B","Benign","Malignant"))
 ```
 
-### 2-4) Inspect the datasets {.tabset}
-#### structure
+#### 2-4) Inspect the datasets {.tabset}
+##### structure
 ```{r}
 str(breast_cancer_data)
 ```
-### 변수 설명(31개)
+<br>
+
+### 변수 설명 (32개)
+
+##### id 및 diagnosis (2개)(0:1)
 * id (ID 번호): 각 환자의 고유 식별 번호
 * diagnosis (진단): 유방 조직의 진단 결과 (M = malignant(악성), B = benign(양성))
+
+참고 내용
+
+진단 (Diagnosis)
+
+양성 (Benign): 양성 종양은 일반적으로 비교적 덜 위험하며, 주변 조직에 침범 X
+
+악성 (Malignant): 악성 종양은 주변 조직으로의 침입이나 전이 가능성이 있으며, 더 높은 위험을 내포
+
+##### mean (10개)(2:11)
 * radius_mean (반경 평균): 중심에서 둘레까지의 거리의 평균
 * texture_mean (질감 평균): gray-scale 값의 표준 편차
 * perimeter_mean (둘레 평균): 핵 종양의 평균 크기
@@ -81,6 +100,8 @@ str(breast_cancer_data)
 * concave points_mean (오목한 지점 평균): 등고선의 오목한 부분의 수의 평균
 * symmetry_mean (대칭성 평균): 대칭성의 평균
 * fractal_dimension_mean (프랙탈 차원 평균): "coastline approximation(해안선 근사치)" - 1의 평균
+
+##### se (10개)(12:21)
 * radius_se (반경 표준 오차): 중심에서 둘레까지의 거리의 평균의 표준 오차
 * texture_se (질감 표준 오차): gray-scale 값의 표준 편차의 표준 오차
 * perimeter_se (둘레 표준 오차): 핵 종양의 평균 크기의 표준 오차
@@ -91,6 +112,8 @@ str(breast_cancer_data)
 * concave points_se (오목한 지점 표준 오차): 등고선의 오목한 부분의 수의 표준 오차
 * symmetry_se (대칭성 표준 오차): 대칭성의 표준 오차
 * fractal_dimension_se (프랙탈 차원 표준 오차): "coastline approximation" - 1의 표준 오차
+
+##### worst (10개)(22:31)
 * radius_worst (반경 최악): 중심에서 둘레까지의 거리의 평균의 최대값
 * texture_worst (질감 최악): gray-scale 값의 표준 편차의 최대값
 * perimeter_worst (둘레 최악): 핵 종양의 평균 크기의 최대값
@@ -104,26 +127,25 @@ str(breast_cancer_data)
 
 <br>
 
-#### summary
+##### summary
 ```{r}
 summary(breast_cancer_data)
 ```
 
-#### tail
+##### tail
 ```{r}
 tail(breast_cancer_data)
 ```
 
----
+<br>
 
-
-## 3. Analyze the Correlation between variables
-### 3-1) Correlation between each variables {.tabset}
+## Step 3: Analyze the Correlation between variables
+#### 3-1) Correlation between each variables {.tabset}
 correalation plot를 그리는 여러 가지 방법
 
 각 데이터에 서로 다른 함수(mean, se, worst)를 적용해봤음
 
-#### Mean
+##### Mean
 
 ```{r}
 # suppressWarnings() : 경고메세지 무시
@@ -135,7 +157,7 @@ suppressWarnings({
 })
 ```
 
-#### SE
+##### SE
 * 피어슨 상관계수란? (일반적으로 "상관 계수"라고 언급할 때, 피어슨 상관 계수를 의미)
 * 두 변수의 선형 상관 관계를 계량화한 수치
 * 결과값은 -1 ~ 1 사이의 값,
@@ -150,7 +172,7 @@ pairs.panels(breast_cancer_data[,c(12:21)], method="pearson",
              pch=1, lm=TRUE, cex.cor=1, smoother=F, stars = T, main="Cancer SE")
 ```
 
-#### Worst
+##### Worst
 * "Cancer Worst"에 대한 산점도 행렬을 생성
 ```{r}
 library(ggplot2)
@@ -163,10 +185,10 @@ ggpairs(breast_cancer_data[,c(22:31)],) +
 ```
 
 
-### 3-2) See the relation between each variables (diagnosis included) {.tabset}
+#### 3-2) See the relation between each variables (diagnosis included) {.tabset}
 combined data보다 diagnosis가 포함된 플롯을 보는 것이 훨씬 더 중요하다고 생각[3-1]
 
-#### Mean
+##### Mean
 ```{r}
 ggpairs(breast_cancer_data[,c(2:11,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth")) +
   theme_bw() + 
@@ -174,24 +196,24 @@ ggpairs(breast_cancer_data[,c(2:11,1)], aes(color=diagnosis, alpha=0.75), lower=
   theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ```
 
-#### SE
+##### SE
 ```{r}
 ggpairs(breast_cancer_data[,c(12:21,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
 labs(title="Cancer SE")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ```
 
-#### Worst
+##### Worst
 ```{r}
 ggpairs(breast_cancer_data[,c(22:31,1)], aes(color=diagnosis, alpha=0.75), lower=list(continuous="smooth"))+ theme_bw()+
 labs(title="Cancer Worst")+
 theme(plot.title=element_text(face='bold',color='black',hjust=0.5,size=12))
 ```
 
-### 3-3) See the ggcorr plot {.tabset}
+#### 3-3) See the ggcorr plot {.tabset}
 By ggcorr, we can see the correlation value more directly than above graph.
 
-#### Mean
+##### Mean
 * ggcorr 함수를 사용하여 "Cancer Mean"에 대한 상관 행렬을 시각화
 ```{r}
 ggcorr(breast_cancer_data[,c(2:11)], name = "corr", label = TRUE) +
@@ -202,7 +224,7 @@ ggcorr(breast_cancer_data[,c(2:11)], name = "corr", label = TRUE) +
 ```
 
 
-#### SE
+##### SE
 * ggcorr 함수를 사용하여 "Cancer SE"에 대한 상관 행렬을 시각화
 ```{r}
 ggcorr(breast_cancer_data[,c(12:21)], name = "corr", label = TRUE) +
@@ -212,7 +234,7 @@ ggcorr(breast_cancer_data[,c(12:21)], name = "corr", label = TRUE) +
 ```
 
 
-#### Worst
+##### Worst
 * ggcorr 함수를 사용하여 "Cancer Worst"에 대한 상관 행렬을 시각화
 ```{r}
 ggcorr(breast_cancer_data[,c(22:31)], name = "corr", label = TRUE) +
@@ -224,7 +246,7 @@ ggcorr(breast_cancer_data[,c(22:31)], name = "corr", label = TRUE) +
 ---
 
 
-## 4. Principal Component Analysis (PCA)
+### Step 4: Principal Component Analysis (PCA)
 
 변수가 너무 많으면 아래와 같은 문제가 발생할 수 있습니다.
 
@@ -254,7 +276,7 @@ breast_cancer_pca <- transform(breast_cancer_data)
 tail(breast_cancer_pca)
 ```
 
-### 4-1) Summary {.tabset}
+#### 4-1) Summary {.tabset}
 PCA 결과 Cumulative Proportion(누적비율)율이 85% 이상이면 number of principal components(주성분의 수)로 판단할 수 있다.
 
 * View Point(시점) : Cumulative Proportion
@@ -262,7 +284,7 @@ PCA 결과 Cumulative Proportion(누적비율)율이 85% 이상이면 number of 
 For example, if cumulative proportion of PC4 is 88.7, it means **the sum of proportion of PC1~PC4** is 88.7
 
 
-#### All
+##### All
 The cumulative proportion from PC1 to PC6 is about 88.7%. (85%이상)
 
 It means that PC1~PC6 can explain 88.7% of the whole data.
@@ -281,21 +303,21 @@ all_pca <- prcomp(breast_cancer_pca[,-1], cor=TRUE, scale = TRUE)
 summary(all_pca)
 ```
 
-#### Mean
+##### Mean
 The cumulative proportion from PC1 to PC3 is about 88.7%. (above 85%)
 ```{r}
 mean_pca <- prcomp(breast_cancer_pca[,c(2:11)], scale = TRUE)
 summary(mean_pca)
 ```
 
-#### SE
+##### SE
 The cumulative proportion from PC1 to PC4 is about 86.7%. (above 85%)
 ```{r}
 se_pca <- prcomp(breast_cancer_pca[,c(12:21)], scale = TRUE)
 summary(se_pca)
 ```
 
-#### Worst
+##### Worst
 The cumulative proportion from PC1 to PC3 is about 85.8%. (above 85%)
 ```{r}
 worst_pca <- prcomp(breast_cancer_pca[,c(22:31)], scale = TRUE)
@@ -303,12 +325,12 @@ summary(worst_pca)
 ```
 
 
-### 4-2) Screeplot {.tabset}
+#### 4-2) Screeplot {.tabset}
 principal components(주성분)으로 설명되는 The percentage of variability(변동성의 백분율)은 screeplot를 통해 확인할수 있음
 
 => View Point : principal components where the line lies.
 
-#### All
+##### All
 Line lies at point PC6
 ```{r}
 fviz_eig(all_pca, addlabels=TRUE, ylim=c(0,60), geom = c("bar", "line"), barfill = "pink", barcolor="grey",linecolor = "red", ncp=10)+
@@ -316,7 +338,7 @@ labs(title = "Cancer All Variances - PCA",
          x = "Principal Components", y = "% of variances")
 ```
 
-#### Mean
+##### Mean
 Line lies at point PC4
 ```{r}
 fviz_eig(mean_pca, addlabels=TRUE, ylim=c(0,60), geom = c("bar", "line"), barfill = "pink", barcolor="grey",linecolor = "red", ncp=10)+
@@ -324,7 +346,7 @@ labs(title = "Cancer Mean Variances - PCA",
          x = "Principal Components", y = "% of variances")
 ```
 
-#### SE
+##### SE
 Line lies at point PC4
 ```{r}
 fviz_eig(se_pca, addlabels=TRUE, ylim=c(0,60), geom = c("bar", "line"), barfill = "pink", barcolor="grey",linecolor = "red", ncp=10)+
@@ -332,7 +354,7 @@ labs(title = "Cancer SE Variances - PCA",
          x = "Principal Components", y = "% of variances")
 ```
 
-#### Worst
+##### Worst
 Line lies at point PC4
 ```{r}
 fviz_eig(worst_pca, addlabels=TRUE, ylim=c(0,60), geom = c("bar", "line"), barfill = "pink", barcolor="grey",linecolor = "red", ncp=10) + 
@@ -340,9 +362,9 @@ fviz_eig(worst_pca, addlabels=TRUE, ylim=c(0,60), geom = c("bar", "line"), barfi
          x = "Principal Components", y = "% of variances")
 ```
 
-### 4-3) Get PCA Variables {.tabset}
-#### All
-##### Get PCA Variables
+#### 4-3) Get PCA Variables {.tabset}
+##### All
+###### Get PCA Variables
 ```{r}
 all_var <- get_pca_var(all_pca)
 all_var
@@ -365,7 +387,7 @@ all_var
 의미: 각 변수가 전체 주성분의 형성에 얼마나 기여했는지를 나타내며, 값이 클수록 해당 변수가 주성분 형성에 큰 역할을 했다고 볼 수 있습니다.
 
 
-##### Quality of representation of PCA
+###### Quality of representation of PCA
 * Correlation between variables and PCA
 * corrplot 함수는 상관 행렬을 시각적으로 나타내는 데 사용되는 함수
 * corrplot 함수는 변수들 간의 코사인 제곱 값을 시각적으로 나타내는 플롯을 생성합니다. 이 플롯은 변수들이 각 주성분에 얼마나 설명력을 가지고 있는지를 보여줄 것입니다. 높은 값은 해당 변수가 주성분에 대해 큰 설명력을 가지고 있음을 나타냅니다.
@@ -375,13 +397,13 @@ library("corrplot")
 corrplot(all_var$cos2, is.corr=FALSE)
 ```
 
-##### Contributions of variables to PCA
+###### Contributions of variables to PCA
 To highlight the most contributing variables for each components
 ```{r}
 corrplot(all_var$contrib, is.corr=FALSE)	
 ```
 
-##### Contributions of variables to PC1 & PC2
+###### Contributions of variables to PC1 & PC2
 ```{r}
 library(gridExtra)
 # 주성분 분석 결과에서 주어진 주성분에 대한 변수 기여도를 시각화
@@ -393,27 +415,27 @@ grid.arrange(p1,p2,ncol=2)
 ```
 
 
-#### Mean
-##### Get PCA Variables
+##### Mean
+###### Get PCA Variables
 ```{r}
 mean_var <- get_pca_var(mean_pca)
 mean_var
 ```
 
-##### Quality of representation of PCA
+###### Quality of representation of PCA
 Correlation between variables and PCA
 ```{r}
 library("corrplot")
 corrplot(mean_var$cos2, is.corr=FALSE)
 ```
 
-##### Contributions of variables to PCA
+###### Contributions of variables to PCA
 To highlight the most contributing variables for each components
 ```{r}
 corrplot(mean_var$contrib, is.corr=FALSE)	
 ```
 
-##### Contributions of variables to PC1 & PC2
+###### Contributions of variables to PC1 & PC2
 ```{r}
 library(gridExtra)
 p1 <- fviz_contrib(mean_pca, choice="var", axes=1, fill="pink", color="grey", top=10)
@@ -421,27 +443,27 @@ p2 <- fviz_contrib(mean_pca, choice="var", axes=2, fill="skyblue", color="grey",
 grid.arrange(p1,p2,ncol=2)
 ```
 
-#### SE
-##### Get PCA Variables
+##### SE
+###### Get PCA Variables
 ```{r}
 se_var <- get_pca_var(se_pca)
 se_var
 ```
 
-##### Quality of representation of PCA
+###### Quality of representation of PCA
 Correlation between variables and PCA
 ```{r}
 library("corrplot")
 corrplot(se_var$cos2, is.corr=FALSE)
 ```
 
-##### Contributions of variables to PCA
+###### Contributions of variables to PCA
 To highlight the most contributing variables for each components
 ```{r}
 corrplot(se_var$contrib, is.corr=FALSE)	
 ```
 
-##### Contributions of variables to PC1 & PC2
+###### Contributions of variables to PC1 & PC2
 ```{r}
 library(gridExtra)
 p1 <- fviz_contrib(se_pca, choice="var", axes=1, fill="pink", color="grey", top=10)
@@ -449,27 +471,27 @@ p2 <- fviz_contrib(se_pca, choice="var", axes=2, fill="skyblue", color="grey", t
 grid.arrange(p1,p2,ncol=2)
 ```
 
-#### Worst
-##### Get PCA Variables
+##### Worst
+###### Get PCA Variables
 ```{r}
 worst_var <- get_pca_var(worst_pca)
 worst_var
 ```
 
-##### Quality of representation of PCA
+###### Quality of representation of PCA
 Correlation between variables and PCA
 ```{r}
 library("corrplot")
 corrplot(worst_var$cos2, is.corr=FALSE)
 ```
 
-##### Contributions of variables to PCA
+###### Contributions of variables to PCA
 To highlight the most contributing variables for each components
 ```{r}
 corrplot(worst_var$contrib, is.corr=FALSE)	
 ```
 
-##### Contributions of variables to PC1 & PC2
+###### Contributions of variables to PC1 & PC2
 ```{r}
 library(gridExtra)
 p1 <- fviz_contrib(worst_pca, choice="var", axes=1, fill="pink", color="grey", top=10)
@@ -478,10 +500,10 @@ grid.arrange(p1,p2,ncol=2)
 ```
 
 
-### 4-4) See the plot - color variables by groups {.tabset}
+#### 4-4) See the plot - color variables by groups {.tabset}
 value centers : 위에서 선택한 optimal principal component 값을 넣음
 
-#### All
+##### All
 optimal PC value : PC1~PC6
 ```{r}
 # 시드 설정
@@ -499,7 +521,7 @@ fviz_pca_var(all_pca, col.var = grp,
              legend.title = "Cluster")
 ```
 
-#### Mean
+##### Mean
 optimal PC value : PC1~PC3
 ```{r}
 # 시드 설정
@@ -515,7 +537,7 @@ fviz_pca_var(mean_pca, col.var = grp,
              legend.title = "Cluster")
 ```
 
-#### SE
+##### SE
 optimal PC value : PC1~PC4
 ```{r}
 # 시드 설정
@@ -531,7 +553,7 @@ fviz_pca_var(se_pca, col.var = grp,
              legend.title = "Cluster")
 ```
 
-#### Worst
+##### Worst
 optimal PC value : PC1~PC3
 ```{r}
 # 시드 설정
@@ -548,14 +570,12 @@ fviz_pca_var(worst_pca, col.var = grp,
 ```
 
 
-
-
-### 4-5) See the Biplot {.tabset}
+#### 4-5) See the Biplot {.tabset}
 ```{r}
 library("factoextra")
 ```
 
-#### All
+##### All
 
 * all_pca
 주성분 분석의 결과 객체
@@ -587,21 +607,21 @@ fviz_pca_biplot(all_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
 
-#### Mean
+##### Mean
 ```{r}
 fviz_pca_biplot(mean_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
 
-#### SE
+##### SE
 ```{r}
 fviz_pca_biplot(se_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
                 legend.title="Diagnosis", addEllipses = TRUE)
 ```
 
-#### Worst
+##### Worst
 ```{r}
 fviz_pca_biplot(worst_pca, col.ind = breast_cancer_data$diagnosis, col="black",
                 palette = "jco", geom = "point", repel=TRUE,
@@ -612,8 +632,8 @@ fviz_pca_biplot(worst_pca, col.ind = breast_cancer_data$diagnosis, col="black",
 ---
 
 
-## 5. 모든 ML 방법을 적용하고 서로 비교하여 가장 적합한 것을 선택합니다.
-### 5-1) Make test & train dataset for testing classification ML methods
+### Step 5: 모든 ML 방법을 적용하고 서로 비교하여 가장 적합한 것을 선택합니다.
+#### 5-1) Make test & train dataset for testing classification ML methods
 Shuffle the wbcd data(100%) & Make train dataset(70%), test dataset(30%)
 
 * 분류 ML 방법 테스트를 위한 테스트 및 학습 데이터 세트 만들기
@@ -634,25 +654,25 @@ test <- breast_cancer_data[-index,]   # 테스트 데이터: 나머지 30%의 �
 ```
 
 
-### 5-2) Check the proportion of diagnosis (Benign / Malignant) {.tabset}
-#### train
+#### 5-2) Check the proportion of diagnosis (Benign / Malignant) {.tabset}
+##### train
 ```{r}
 prop.table(table(train$diagnosis))
 ```
 
-#### test
+##### test
 ```{r}
 prop.table(table(test$diagnosis))
 ```
 
 
-### 5-3) Apply every ML methods(that I know) to data {.tabset}
+#### 5-3) Apply every ML methods(that I know) to data {.tabset}
 * "Caret"은 Classification And REgression Training의 약자로, 모델 훈련과 관련된 다양한 기능을 제공하는 유용한 도구 모음
 ```{r}
 library(caret)
 ```
 
-#### C5.0
+##### C5.0
 ```{r}
 library(C50)
 # 의사 결정 트리 기반의 분류 알고리즘
@@ -715,8 +735,8 @@ False Negative (FN): 3 (실제 Malignant, 예측 Benign)
 양성 클래스로 설정된 클래스.
 
 
-#### C5.0 - Tune
-##### Choose 'trials' which shows best predict performance in C5.0
+##### C5.0 - Tune
+###### Choose 'trials' which shows best predict performance in C5.0
 ```{r}
 # C5.0 알고리즘의 성능을 trials 매개변수를 다양하게 변화시켜가며 평가하고 최적의 trials 횟수를 찾는 코드
 
@@ -761,7 +781,7 @@ hchart(acc, 'line', hcaes(t, cnt)) %>%
 
 ```
 
-##### Apply optimal trials to show best predict performance in C5.0
+###### Apply optimal trials to show best predict performance in C5.0
 ```{r}		
 learn_imp_c50 <- C5.0(train[,-1],train$diagnosis,trials=opt_t$t)	
 pre_imp_c50 <- predict(learn_imp_c50, test[,-1])
@@ -769,7 +789,7 @@ cm_imp_c50 <- confusionMatrix(pre_imp_c50, test$diagnosis)
 cm_imp_c50
 ```
 
-#### rpart
+##### rpart
 ```{r}
 library(rpart)
 
@@ -788,7 +808,7 @@ cm_rp
 
 
 
-#### Prune
+##### Prune
 ```{r}
 # 의사결정 나무 모델 학습
 learn_rp <- rpart(diagnosis ~ ., data = train, control = rpart.control(minsplit = 2))
@@ -806,8 +826,7 @@ cm_pru
 ```
 
 
-
-#### OneR
+##### OneR
 ```{r}
 library("RWeka")
 
@@ -824,7 +843,7 @@ cm_1r
 ```
 
 
-#### JRip
+##### JRip
 ```{r}
 # RWeka 라이브러리에서 JRip 모델 학습
 learn_jrip <- JRip(diagnosis ~ ., data = train)
@@ -839,8 +858,8 @@ cm_jrip
 ```
 
 
-#### naiveBayes
-##### naiveBayes에서 가장 좋은 예측 성능을 보이는 'laplace'를 선택
+##### naiveBayes
+###### naiveBayes에서 가장 좋은 예측 성능을 보이는 'laplace'를 선택
 * 이는 "laplace" 함수가 naiveBayes의 성능 예측에 효과적이지 않음을 보여줌
 * 따라서 튜닝에 laplace 옵션을 사용하지 않아도 됨
 ```{r}
@@ -876,7 +895,7 @@ hchart(acc, 'line', hcaes(l, cnt)) %>%
 
 ```
 
-##### naiveBayes without laplace
+###### naiveBayes without laplace
 ```{r}
 # e1071 라이브러리에서 naiveBayes 모델 학습
 learn_nb <- naiveBayes(train[, -1], train$diagnosis)
@@ -890,9 +909,7 @@ cm_nb
 
 ```
 
-
-
-#### randomForest
+##### randomForest
 ```{r}
 library(randomForest)
 
@@ -911,7 +928,7 @@ cm_rf
 plot(learn_rf, main="Random Forest (Error Rate vs. Number of Trees)")
 ```
 
-##### Prediction Plot
+###### Prediction Plot
 * randomForest 모델의 margin을 시각화하는데 사용
 * margin은 결정 경계와 각 클래스에 대한 거리를 나타냄
 
@@ -919,7 +936,7 @@ plot(learn_rf, main="Random Forest (Error Rate vs. Number of Trees)")
 plot(margin(learn_rf,test$diagnosis))
 ```
 
-##### Variance Importance Plot
+###### Variance Importance Plot
 - MeanDecreaseAccuracy : radius_worst > concave.points_worst > area_worst > perimeter_worst
 
 정확도 향상을 위한 중요한 매개변수는 "MeanDecreaseAccuracy"에 의해 결정됩니다.
@@ -933,7 +950,7 @@ varImpPlot(learn_rf)
 ```
 
 
-#### ctree
+##### ctree
 ```{r}
 library(party)
 
@@ -949,8 +966,8 @@ cm_ct
 
 ```
 
-#### KNN - Tune
-##### Choose 'k' which shows best predict performance in KNN
+##### KNN - Tune
+###### Choose 'k' which shows best predict performance in KNN
 
 
 ```{r}
@@ -985,7 +1002,7 @@ hchart(acc, 'line', hcaes(k, cnt)) %>%
 
 ```
 
-##### Apply optimal K to show best predict performance in KNN
+###### Apply optimal K to show best predict performance in KNN
 ```{r}
 # 최적의 k 값을 사용하여 KNN 알고리즘 적용
 pre_knn <- knn(train = train[, -1], test = test[, -1], cl = train[, 1], k = opt_k$k, prob = TRUE)
@@ -997,8 +1014,8 @@ cm_knn
 ```
 
 
-#### K-Means
-##### Make KMEANS predict function
+##### K-Means
+###### Make KMEANS predict function
 * orgin predict function는 kmeans를 지원하지 않기 때문에 kmeans 방법을 사용하여 예측하는 함수를 만들어야 합니다.
 ```{r}
 predict.kmeans <- function(newdata, object) {
@@ -1018,7 +1035,7 @@ predict.kmeans <- function(newdata, object) {
 
 ```
 
-##### apply kmeans
+###### apply kmeans
 인자가 2개(benign, malignant)뿐이므로 중심을 2에 적용해야 합니다.
 
 ```{r}
@@ -1038,7 +1055,7 @@ cm_kmeans <- confusionMatrix(pre_kmeans, test$diagnosis)
 
 ```
 
-##### plot
+###### plot
 ```{r}
 library(factoextra)
 
@@ -1050,7 +1067,7 @@ fviz_cluster(learn_kmeans, data = train[,-1])
 ```
 
 
-#### GBM
+##### GBM
 ```{r}
 library(gbm)
 
@@ -1079,7 +1096,7 @@ cm_gbm
 ```
 
 
-#### adaBoost
+##### adaBoost
 ```{r}
 library(rpart)
 library(ada)
@@ -1100,7 +1117,7 @@ cm_ada
 ```
 
 
-#### SVM
+##### SVM
 ```{r}
 # SVM 모델 학습
 learn_svm <- svm(diagnosis ~ ., data = train)
@@ -1114,8 +1131,8 @@ cm_svm
 ```
 
 
-#### SVM - Tune
-##### Choose 'gamma, cost' which shows best predict performance in SVM
+##### SVM - Tune
+###### Choose 'gamma, cost' which shows best predict performance in SVM
 ```{r}
 # 각각의 cost와 gamma에 대한 조합을 생성
 gamma <- seq(0, 0.1, 0.005)
@@ -1152,7 +1169,7 @@ hchart(acc, 'line', hcaes(p, cnt)) %>%
 
 ```
 
-##### Apply optimal parameters(gamma, cost) to show best predict performance in SVM
+###### Apply optimal parameters(gamma, cost) to show best predict performance in SVM
 ```{r}
 # 최적의 하이퍼파라미터를 사용하여 SVM 모델 학습
 learn_imp_svm <- svm(diagnosis ~ ., data = train, cost = parms$cost[opt_p$p], gamma = parms$gamma[opt_p$p])
@@ -1167,7 +1184,7 @@ cm_imp_svm
 ```
 
 
-### 5-4) Visualize to compare the accuracy of all methods
+#### 5-4) Visualize to compare the accuracy of all methods
 ```{r}
 # 색상 정의
 col <- c("#ed3b3b", "#0099ff")
@@ -1195,7 +1212,7 @@ fourfoldplot(cm_imp_svm$table, color = col, conf.level = 0, margin = 1, main=pas
 
 
 
-### 5-5) Select a best prediction model according to high accuracy
+#### 5-5) Select a best prediction model according to high accuracy
 ```{r}
 # 각 모델의 정확도를 벡터로 저장
 opt_predict <- c(
@@ -1218,29 +1235,29 @@ best_predict_model <- subset(opt_predict, opt_predict == max(opt_predict))
 ```
 
 
-## 6. Prepare Patient data for testing function 
+### Step 1: Prepare Patient data for testing function 
 If you want to make your own new data, 
 make sure your data format is same as below.
 
-### 6-1) Import patient data {.tabset}
+#### 6-1) Import patient data {.tabset}
 ```{r}
 patient <- read.csv("./data/breast_cancer.csv", header=T, stringsAsFactors=F)
 patient$X <- NULL
 ```
 
-#### Malignant patient(악성 환자)   	
+##### Malignant patient(악성 환자)   	
 ```{r}
 M <- patient[19,]   	    	## 19th patient
 M[,c(1,2)]			            ## Malignant
 ```
 
-#### Benign patient(양성 환자)
+##### Benign patient(양성 환자)
 ```{r}
 B <- patient[20,]           ## 20th patient          
 B[,c(1,2)]			            ## Benign
 ```
 
-### 6-2) Delete diagnosis column for testing
+#### 6-2) Delete diagnosis column for testing
 ```{r}
 M$diagnosis <- NULL
 B$diagnosis <- NULL
@@ -1249,8 +1266,8 @@ B$diagnosis <- NULL
 ---
 
 
-## 7.  환자의 암 진단 예측 Function
-### 7-1) 환자 진단 Function
+### Step 7: 환자의 암 진단 예측 Function
+#### 7-1) 환자 진단 Function
 가장 좋은 예측 모델로 평가되었으므로 'Improve SVM Algorithm'을 기본으로 사용하세요.
 
 ```{r}
@@ -1274,8 +1291,8 @@ cancer_diagnosis_predict_s <- function(new, method = learn_imp_svm) {
 
 ```
 
-### 7-2) Testing Function (use only 1 test data) {.tabset}
-#### Benign test data
+#### 7-2) Testing Function (use only 1 test data) {.tabset}
+##### Benign test data
 * default = improve svm
 ```{r}
 cancer_diagnosis_predict_p(B)			
@@ -1286,7 +1303,7 @@ cancer_diagnosis_predict_p(B)
 cancer_diagnosis_predict_p(B,learn_imp_c50)
 ```
 
-#### Malignant test data
+##### Malignant test data
 * default = improve svm
 ```{r}
 cancer_diagnosis_predict_p(M)
@@ -1298,7 +1315,7 @@ cancer_diagnosis_predict_p(M,learn_imp_c50)
 ```
 
 
-### 7-3) Make Submission Output (use test dataset)
+#### 7-3) Make Submission Output (use test dataset)
 ```{r}
 library(knitr)
 
@@ -1321,7 +1338,7 @@ write.csv(sub[, c(1, 2)], file = 'submission.csv', row.names = FALSE)
 
 ---
 
-## 8. Visualize (Probabilty Density Function Graph)
+### Step 8: Visualize (Probabilty Density Function Graph)
 환자를 위해 암을 진단하는 의사들을 위해 이 플롯을 만들었습니다.
 환자 입장에서 진단 결과를 **patients diagnosis strong line**을 포함하여 확률밀도 그래프로 시각화하여 환자의 상태를 한 번에 확인할 수 있도록 하였습니다.
 
@@ -1329,7 +1346,7 @@ write.csv(sub[, c(1, 2)], file = 'submission.csv', row.names = FALSE)
 ('_worst' variance 제외)
 
 
-### 8-1) Create Visualize Function
+#### 8-1) Create Visualize Function
 ```{r visual1}
 cancer_summary <- function(new,data) {
 
@@ -1397,14 +1414,14 @@ res_mean
 ```
 
 
-### 8-2) Testing Function {.tabset}
-#### Benign
+#### 8-2) Testing Function {.tabset}
+##### Benign
 ```{r}
 cancer_summary(B, breast_cancer_data)
 ```
 
 
-#### Malignant
+##### Malignant
 ```{r}
 cancer_summary(M, breast_cancer_data)
 ```
@@ -1414,13 +1431,13 @@ cancer_summary(M, breast_cancer_data)
 
 
 
-## 9. Visualize (Radar)
+### Step 9: Visualize (Radar)
 This is radar plot to show patient's status of each factor of cancer.
 
 The grey colored area shows **Benigns' Average Area**.
 
 
-### 9-1) Create Visualize Function
+#### 9-1) Create Visualize Function
 ```{r radar}
 cancer_radar <- function(new,data) {
 
@@ -1497,8 +1514,8 @@ res
 
 
 
-### 9-2) Testing Function {.tabset}
-#### Benign
+#### 9-2) Testing Function {.tabset}
+##### Benign
 ```{r}
 library(ggplot2)   
 
@@ -1506,7 +1523,7 @@ cancer_radar(B,breast_cancer_data)
 ```
 
 
-#### Malignant
+##### Malignant
 ```{r}
 cancer_radar(M,breast_cancer_data)	
 ```
@@ -1514,7 +1531,7 @@ cancer_radar(M,breast_cancer_data)
 
 ---
 
-# 10. Conclusion
+### Step 10: Conclusion
 
 저는 최근에 이진 분류를 사용하여 이 **wisconsin breast cancer dataset**의 Python 버전을 업로드했습니다.
 

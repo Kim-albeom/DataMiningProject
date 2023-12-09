@@ -19,7 +19,7 @@ This dataset can be found in this link: https://www.kaggle.com/uciml/breast-canc
 
 UCI 기계 학습 저장소에서도 찾을 수 있음 https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29
 
-## 0. usage library
+## Step 0 : usage library
 설치 안된 라이브러리의 경우 설치 필요
 ```{r}
 library(psych, warn.conflicts=F)
