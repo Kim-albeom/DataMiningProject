@@ -1,0 +1,16 @@
+---
+title: "EDA_sample_Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+breast_cancer_data <- read.csv("../data/breast_cancer.csv", header=T)
+
+head(breast_cancer_data)
+tail(breast_cancer_data)
+```
+
