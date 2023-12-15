@@ -1,0 +1,181 @@
+---
+title: "Modeling_ver1_Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## scoring 및 ks 통계량
+
+
+0. library
+---------------------------------------
+```{r}
+library(dplyr)
+library(tidyverse)
+```
+
+<br>
+
+1. data load
+---------------------------------------
+
+```{r}
+breast_cancer <- read.csv("../data/breast_cancer.csv", header=T)
+
+head(breast_cancer, n=3)
+```
+
+* 데이터 전처리
+
+```{r}
+# NULL Data인 X열 제외
+breast_cancer <- breast_cancer %>% select(-X)
+
+# 'diagnosis'를 factor 로 변환
+breast_cancer$diagnosis <- as.factor(breast_cancer$diagnosis)
+
+# 속성 확인
+str(breast_cancer)
+```
+
+<br>
+
+2. Training vs. Validation 데이터
+---------------------------------------
+
+* 본 과정에서 570개 관측치로 구성된 german 데이터를 tranin: validation=7:3 으로 나눈 index를 생성함
+
+* tr.index : 전채 데이터 중 70%를 샘플링한 tranin index
+* german.tr: traning data
+* german.val : validation data
+
+
+```{r}
+# 전체 데이터의 행 수
+total_rows <- nrow(breast_cancer)
+
+# 고정된 인덱스 생성
+fixed_index <- sample(1:total_rows)
+
+# train과 val의 비율을 7:3으로 설정
+train_ratio <- 0.7
+train_rows <- round(total_rows * train_ratio)
+
+# 고정된 인덱스에서 train 데이터의 인덱스 선택
+train.index <- fixed_index[1:train_rows]
+
+# train과 val 데이터로 나누기
+breast_cancer.train <- breast_cancer[train.index, ]
+breast_cancer.val <- breast_cancer[-train.index, ]
+```
+
+```{r}
+nrow(breast_cancer.train)
+nrow(breast_cancer.val)
+```
+
+<br>
+
+3.  Logistic regresion glm (by use glm)
+---------------------------------------
+
+* glm(generalized linear model)
+
+```{r, warning = FALSE}
+# 모델 생성
+logit.cancer <- glm(diagnosis ~ radius_mean + texture_mean + perimeter_mean + area_mean + smoothness_mean + compactness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean, data=breast_cancer, family=binomial())
+
+# 모델 요약
+logit.cancer
+
+```
+<br>
+
+4. Scoring
+---------------------------------------
+
+* Validation 데이터에 대하여 scoring를 구함
+```{r}
+# logit.cancer 모델을 이용해 breast_cancer.val의 예측을 수행
+scr.val <- predict(logit.cancer , newdata=breast_cancer.val)
+
+# 예측 결과인 로그 오즈값은 scr.val에 저장
+scr.val[1:10]
+```
+
+* data.frame 함수를 사용하여 scr.val에서 가져온 로그 오즈값과 
+* breast_cancer.val$diagnosis에서 가져온 실제 진단 결과를 가지고 있는 데이터프레임을 생성
+```{r}
+score.val <- data.frame(log.odds = scr.val, diagnosis = breast_cancer.val$diagnosis)
+
+head(score.val)
+```
+
+* score 값 엑셀로 저장
+```{r}
+# write.csv(score.val, "./scoreval.csv")
+```
+
+* score값을 통해 뽑아낸 각 diagnosis에 따른 누적확률
+* scoreval_ver1.csv
+```{r}
+dfn <- read.table(header=T, text='
+diagnosis  group prob
+  B  1  0.0467
+  M  1  0.1875
+  B  2  0.1402
+  M  2  0.2969
+  B  3  0.2243
+  M  3  0.4219
+  B  4  0.3084
+  M  4  0.5469
+  B  5  0.4206
+  M  5  0.625
+  B  6  0.5234
+  M  6  0.7188
+  B  7  0.6168
+  M  7  0.8281
+  B  8  0.7477
+  M  8  0.875
+  B  9  0.8692
+  M  9  0.9375
+  B  10 1
+  M  10 1
+')
+
+dfn
+```
+
+<br>
+
+5. KS 통계량 그래프
+---------------------------------------
+
+```{r}
+library(ggplot2)
+
+ggplot(data=dfn, aes(x=group, y=prob, group=diagnosis , colour=diagnosis )) + 
+  geom_line() + 
+  geom_point() +
+  ggtitle("KS(Kolmogorov-Smirnov)") +
+  scale_y_continuous(breaks=seq(0, 1, 0.1)) +  # y축 간격을 0.1로 설정
+  scale_x_continuous(breaks=seq(0, 10, 1)) +  # x축 간격을 0.1로 설정
+  theme_bw() +
+  theme(legend.position = "top", plot.title = element_text(hjust = 0.5)) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
