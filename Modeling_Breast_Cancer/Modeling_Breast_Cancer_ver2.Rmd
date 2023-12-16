@@ -1,0 +1,308 @@
+---
+title: "Modeling_ver2_Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Modeling
+### DecisionTree, RandomForest, NN
+1. 모델 학습 및 학습된 모델에 대한 Confusion Matrix 작성
+
+2. 정확도(ACCuracy) 및 AUROC(Roc 아랫면적) 값 출력
+-   향후 3가지 모델에 대하여 한 그래프에 표시 및 비교를 시각화 예정
+
+
+0. Library
+---------------------------------------
+```{r}
+# Base library
+library(dplyr)
+library(tidyverse)
+
+# Confusion Matrix
+library(caret)
+
+# ROC curve
+library(ROCR)
+```
+
+<br>
+
+1. Data load
+---------------------------------------
+
+```{r}
+breast_cancer <- read.csv("../data/breast_cancer.csv", header=T)
+
+head(breast_cancer, n=3)
+```
+
+* 데이터 전처리
+
+```{r}
+# NULL Data인 X열 제외
+breast_cancer <- breast_cancer %>% select(-X)
+
+# 'diagnosis'를 factor 로 변환
+breast_cancer$diagnosis <- as.factor(breast_cancer$diagnosis)
+
+# 속성 확인
+str(breast_cancer)
+
+# seed 고정
+set.seed(1226)
+```
+
+<br>
+
+2. Split Training and Validation
+---------------------------------------
+
+* 관측치 570개로 구성된 breast_cancer 데이터를 tranin: validation=7:3 으로 나눈 index를 생성함
+
+  - train.index : 전채 데이터 중 70%를 샘플링한 tranin index
+  - breast_cancer.train: traning data
+  - breast_cancer.val : validation data
+
+
+```{r}
+# 전체 데이터의 행 수
+total_rows <- nrow(breast_cancer)
+
+# 고정된 인덱스 생성
+fixed_index <- sample(1:total_rows)
+
+# train과 val의 비율을 7:3으로 설정
+train_ratio <- 0.7
+train_rows <- round(total_rows * train_ratio)
+
+# 고정된 인덱스에서 train 데이터의 인덱스 선택
+train.index <- fixed_index[1:train_rows]
+
+# train과 val 데이터로 나누기
+breast_cancer.train <- breast_cancer[train.index, ]
+breast_cancer.val <- breast_cancer[-train.index, ]
+
+train_count <- nrow(breast_cancer.train)
+test_count <- nrow(breast_cancer.val)
+
+cat("train data: ", train_count, "\n", "val data: ", test_count, "\n")
+
+
+```
+
+<br>
+
+3. Modeling
+---------------------------------------
+
+<br>
+
+## DecisionTree
+
+```{r}
+library(rpart)
+library(rpart.plot)
+
+breast_tree <- rpart(diagnosis ~ radius_mean + texture_mean + perimeter_mean + area_mean + smoothness_mean + compactness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean, data=breast_cancer.train, method = "class")
+
+rpart.plot(breast_tree)
+```
+
+* 정확도 판단
+
+```{r}
+# val data acc
+pred_test <- predict(breast_tree, breast_cancer.val, type = "class")
+acc_test <- sum(pred_test == breast_cancer.val$diagnosis) / nrow(breast_cancer.val)
+print(paste("Accuracy: ", acc_test))
+```
+
+* Confusion Matrix(혼동 행렬)
+
+```{r}
+cfm <- confusionMatrix(pred_test, breast_cancer.val$diagnosis)
+
+print(cfm)
+```
+
+* ROC 곡선
+
+```{r}
+# data 형식 변환
+pred_test_numeric <- as.numeric(pred_test)
+diagnosis_numeric <- as.numeric(breast_cancer.val$diagnosis)
+
+# ROC curve 생성
+pred <- prediction(pred_test_numeric, diagnosis_numeric)
+roc <- performance(pred, "tpr", "fpr")
+
+# AUROC 계산
+auroc <- performance(pred, measure = "auc")@y.values[[1]]
+
+# ROC curve 
+plot(roc)
+
+# AUROC 값 그래프에 추가
+text(0.7, 0.2, paste("AUROC:", round(auroc, 4)))
+
+```
+
+<br>
+
+## RandomForest
+
+```{r}
+library(randomForest)
+
+breast_rf <- randomForest(diagnosis ~ radius_mean + texture_mean + perimeter_mean + area_mean + smoothness_mean + compactness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean,  data=breast_cancer.train, mtry=3, ntree=6)
+
+plot(breast_rf)
+```
+
+MeanDecreaseGini는 각 트리에서 해당 변수를 기준으로 분류하는 지점에서의 불순도 감소량의 총합을 계산한 후, 이를 모든 트리에 대해 평균낸 값
+
+이 값이 클수록 해당 변수가 모델의 분류 성능에 더 큰 영향을 미친다는 것을 의미합니다
+
+<br>
+
+* 정확도 판단
+
+```{r}
+pred_test <- predict(breast_rf, breast_cancer.val)
+acc_test <- sum(pred_test == breast_cancer.val$diagnosis) / nrow(breast_cancer.val)
+
+print(paste("Accuracy: ", acc_test))
+```
+
+* Confusion Matrix(혼동 행렬)
+
+```{r}
+cfm <- confusionMatrix(pred_test, breast_cancer.val$diagnosis)
+
+print(cfm)
+```
+
+* ROC 곡선
+
+```{r}
+# data 형식 변환
+pred_test_numeric <- as.numeric(pred_test)
+diagnosis_numeric <- as.numeric(breast_cancer.val$diagnosis)
+
+# ROC curve 
+pred <- prediction(pred_test_numeric, diagnosis_numeric)
+roc <- performance(pred, "tpr", "fpr")
+
+# AUROC 계산
+auroc <- performance(pred, measure = "auc")@y.values[[1]]
+
+# ROC curve 그리기
+plot(roc)
+
+# AUROC 값 그래프에 추가
+text(0.7, 0.2, paste("AUROC:", round(auroc, 4)))
+```
+
+<br>
+
+## NN
+
+```{r}
+library(nnet)
+library(gmodels)
+
+# 학습 데이터에 대한 formula 생성
+myform <- as.formula("diagnosis ~ radius_mean + texture_mean + perimeter_mean + area_mean + smoothness_mean + compactness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean")
+
+# 모델 학습
+breast_nn <- nnet(myform, 
+                   data = breast_cancer.train, 
+                   size = 3, 
+                   rang = 1, 
+                   decay = 3e-4, 
+                   maxit = 300)
+```
+
+```{r}
+# val data acc
+pred_test <- predict(breast_nn, breast_cancer.val, type = "class")
+
+acc_test <- sum(pred_test == breast_cancer.val$diagnosis)/nrow(breast_cancer.val)
+print(paste("Accuracy: ", acc_test))
+```
+
+* Confusion Matrix(혼동 행렬)
+
+```{r}
+# 예측 결과와 실제 레이블을 팩터로 변환
+pred_test_factor <- as.factor(pred_test)
+actual_labels_factor <- as.factor(breast_cancer.val$diagnosis)
+
+# 팩터의 레벨을 동일하게 설정
+levels(pred_test_factor) <- levels(actual_labels_factor)
+
+# Confusion Matrix 생성
+confusionMatrix(pred_test_factor, actual_labels_factor)
+
+```
+
+<br>
+
+* ROC 곡선
+
+```{r, warning=FALSE}
+# 예측 확률 계산
+predicted_probs <- predict(breast_nn, newdata = breast_cancer.val, type = "raw")
+
+# 실제 값
+actual_labels <- as.numeric(breast_cancer.val$diagnosis == "M")
+
+# 예측 결과와 실제 레이블을 이용해 prediction 객체 생성
+pred <- prediction(predicted_probs, actual_labels)
+
+# TPR(참 긍정률)과 FPR(거짓 긍정률)을 이용해 performance 객체 생성
+perf <- performance(pred, "tpr", "fpr")
+
+# AUROC 계산
+auroc <- performance(pred, measure = "auc")@y.values[[1]]
+
+# ROC curve 그리기
+plot(perf)
+
+# AUROC 값 그래프에 추가
+text(0.7, 0.2, paste("AUROC:", round(auroc, 4)))
+```
+
+* seed 값을 현재 고정한 상태인데 위의 NN 모델의 경우 seed 값에 따라 평가지표 수치의 변동이 큼
+
+
+<br>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
