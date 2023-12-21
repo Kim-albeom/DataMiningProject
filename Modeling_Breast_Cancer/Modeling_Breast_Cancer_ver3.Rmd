@@ -1,0 +1,444 @@
+---
+title: "Modeling_ver3_Rmd"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+0. Library
+---------------------------------------
+```{r}
+# Base library
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+
+# Confusion Matrix
+library(caret)
+
+# ROC curve
+library(ROCR)
+
+# model library
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+# plot combine
+library(gridExtra)
+```
+
+<br>
+
+1. Data load
+---------------------------------------
+
+```{r}
+breast_cancer <- read.csv("../data/breast_cancer.csv", header=T)
+
+# NULL Data인 X열 제외
+breast_cancer <- breast_cancer %>% select(-X)
+
+# 'diagnosis'를 factor 로 변환
+breast_cancer$diagnosis <- as.factor(breast_cancer$diagnosis)
+
+# 속성 확인
+str(breast_cancer)
+```
+
+이 데이터는 유방암 진단에 관련된 정보로 각 변수는 다음과 같은 의미
+
+* id: 환자의 ID
+* diagnosis: 진단 결과 (M = 악성, B = 양성)
+* radius_mean: 암세포의 평균 반경
+* texture_mean: 암세포의 평균 질감
+* perimeter_mean: 암세포의 평균 둘레
+* area_mean: 암세포의 평균 면적
+* smoothness_mean: 암세포의 평균 매끄러움
+* compactness_mean: 암세포의 평균 조그만함
+* concavity_mean: 암세포의 평균 오목함
+* concave.points_mean: 암세포의 평균 오목한 점의 수
+* symmetry_mean: 암세포의 평균 대칭성
+* fractal_dimension_mean: 암세포의 평균 프랙탈 차원
+
+이외에도 각 특징의 표준 오차(_se)와 최악의 경우(_worst)에 대한 측정치가 포함
+
+<br>
+
+#### 데이터 분할
+
+
+관측치 570개로 구성된 breast_cancer 데이터를 train: valid = 7:3 으로 나눈 index를 생성
+
+* train.index : 전채 데이터 중 70%를 샘플링한 train index
+* breast_cancer.train: train data
+* breast_cancer.val : valid data
+
+
+```{r}
+# seed 고정
+set.seed(1226)
+
+# 전체 데이터의 행 수
+total_rows <- nrow(breast_cancer)
+
+# 고정된 인덱스 생성
+fixed_index <- sample(1:total_rows)
+
+# train과 val의 비율을 7:3으로 설정
+train_ratio <- 0.7
+train_rows <- round(total_rows * train_ratio)
+
+# 고정된 인덱스에서 train 데이터의 인덱스 선택
+train.index <- fixed_index[1:train_rows]
+
+# train과 val 데이터로 나누기
+breast_cancer.train <- breast_cancer[train.index, ]
+breast_cancer.val <- breast_cancer[-train.index, ]
+
+train_count <- nrow(breast_cancer.train)
+test_count <- nrow(breast_cancer.val)
+
+cat("train data: ", train_count, "\n", "valid data: ", test_count, "\n")
+
+```
+
+<br>
+
+여기까지는 약식으로 EDA 부분에서 처리할 내용을 작성한 내용으로 향후 EDA 에서 처리하는 과정으로 대체할 예정
+
+이후부터가 Modeling 본 내용
+
+<br>
+
+2. Modeling
+---------------------------------------
+
+formula에 *diagnosis ~ 선택한 독립변수들* 의 형태로 저장
+
+EDA를 통해 선택한 독립변수들을 아래 코드에서 확인 및 수정가능
+
+```{r}
+formula <- diagnosis ~ radius_mean + texture_mean + perimeter_mean + area_mean + smoothness_mean + compactness_mean + concavity_mean + concave.points_mean + symmetry_mean + fractal_dimension_mean
+```
+
+*Logistic regresion*, *DecisionTree*, *RandomForest* 3가지 모델에 대해서 성능 비교 진행 
+
+```{r, warning=FALSE}
+# 모델 학습
+logit_cancer <- glm(formula, data=breast_cancer.train, family=binomial())
+tree_cancer <- rpart(formula, data=breast_cancer.train, method = "class")
+rf_cancer <- randomForest(formula, data=breast_cancer.train, mtry=3, ntree=6)
+```
+
+<br>
+
+### Compare Accuracy
+
+각 모델에 대해서 첫번째로 Accuracy(정확도)를 비교를 진행하였습니다.
+
+```{r}
+# 각 모델에 대한 예측 생성
+logit_pred_acc <- predict(logit_cancer, newdata = breast_cancer.val, type = "response")
+tree_pred_acc <- predict(tree_cancer, newdata = breast_cancer.val, type = "class")
+rf_pred_acc <- predict(rf_cancer, newdata = breast_cancer.val)
+
+# 예측을 이진 클래스로 변환
+logit_pred_class <- ifelse(logit_pred_acc > 0.5, "M", "B")
+
+# 정확도 계산
+logit_acc <- mean(logit_pred_class == breast_cancer.val$diagnosis)
+tree_acc <- mean(tree_pred_acc == breast_cancer.val$diagnosis)
+rf_acc <- mean(rf_pred_acc == breast_cancer.val$diagnosis)
+
+# 정확도를 데이터 프레임으로 변환
+acc_df <- data.frame(Model = c("Logistic Regression", "Decision Tree", "Random Forest"),
+                     Accuracy = c(logit_acc, tree_acc, rf_acc))
+
+# Model 변수를 팩터로 변환하고 레벨 순서를 지정합니다
+acc_df$Model <- factor(acc_df$Model, levels=c("Random Forest", "Decision Tree", "Logistic Regression"))
+
+# 색상을 벡터로 저장합니다
+colors <- c("#0000FF80", "#FF000080", "#00800080")
+
+# 바 플롯을 그립니다
+ggplot(acc_df, aes(x=Model, y=Accuracy, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  ylim(0, 1) +
+  geom_text(aes(label=round(Accuracy, 4)), size=5, vjust=-0.5) +
+  coord_flip() +
+  labs(title="Comparison of Model Accuracy", x="Model", y="Accuracy") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.y=element_blank()) 
+
+```
+
+각 모델에 대해서 정확도를 구하고 시각화를 하였을때  Decison Tree < Logistic Regression < Random Forest 순으로 
+
+정확도의 성능이 보이고 있습니다.
+
+
+<br>
+
+### Compare ROC & AUC
+
+다음으로는 Roc 곡선을 시각화 하고 각 모델별 AUC를 비교를 진행하였습니다.
+
+<br>
+
+ROC Curve
+
+```{r, warning=FALSE}
+# 각 모델에 대한 예측 생성
+logit_pred_roc <- predict(logit_cancer, newdata = breast_cancer.val, type = "response")
+tree_pred_roc <- predict(tree_cancer, newdata = breast_cancer.val, type = "prob")[,2]
+rf_pred_roc <- predict(rf_cancer, newdata = breast_cancer.val, type = "prob")[,2]
+
+# 예측 결과와 실제 레이블을 사용하여 예측 객체를 생성합니다
+pred_logit <- prediction(logit_pred_roc, breast_cancer.val$diagnosis)
+pred_tree <- prediction(tree_pred_roc, breast_cancer.val$diagnosis)
+pred_rf <- prediction(rf_pred_roc, breast_cancer.val$diagnosis)
+
+# ROC 곡선을 계산합니다
+perf_logit <- performance(pred_logit, "tpr", "fpr")
+perf_tree <- performance(pred_tree, "tpr", "fpr")
+perf_rf <- performance(pred_rf, "tpr", "fpr")
+
+# 데이터 프레임을 생성합니다
+df <- data.frame(
+  TPR = c(perf_logit@y.values[[1]], perf_tree@y.values[[1]], perf_rf@y.values[[1]]),
+  FPR = c(perf_logit@x.values[[1]], perf_tree@x.values[[1]], perf_rf@x.values[[1]]),
+  Model = c(rep("Logistic Regression", length(perf_logit@y.values[[1]])),
+            rep("Decision Tree", length(perf_tree@y.values[[1]])),
+            rep("Random Forest", length(perf_rf@y.values[[1]])))
+)
+
+# ROC 곡선을 그립니다
+ggplot(df, aes(x=FPR, y=TPR, color=Model)) +
+  geom_line(size=1.2) +  
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") + 
+  labs(title="ROC Curves", x="False Positive Rate", y="True Positive Rate") +
+  theme_bw() +
+  scale_color_manual(values=c("#0000FF80", "#FF000080", "#00800080"), 
+                     breaks=c("Logistic Regression", "Decision Tree", "Random Forest"))
+
+```
+
+ROC Curve를 보았을때 Decison Tree < Random Forest = Logistic Regression 정도를 
+
+대략적으로 파악할수 있고 AUC 값을 통해 수치적으로 정확하게 다시 확인하였습니다.
+
+<br>
+
+AUC
+
+```{r}
+# AUC를 계산합니다
+auc_logit <- performance(pred_logit, "auc")@y.values[[1]]
+auc_tree <- performance(pred_tree, "auc")@y.values[[1]]
+auc_rf <- performance(pred_rf, "auc")@y.values[[1]]
+
+# AUC를 데이터 프레임으로 변환합니다
+auc_df <- data.frame(Model = c("Logistic Regression", "Decision Tree", "Random Forest"),
+                     AUC = c(auc_logit, auc_tree, auc_rf))
+
+# Model 변수를 팩터로 변환하고 레벨 순서를 지정합니다
+auc_df$Model <- factor(auc_df$Model, levels=c("Random Forest", "Decision Tree", "Logistic Regression"))
+
+# 색상을 벡터로 저장합니다
+colors <- c("#0000FF80", "#FF000080", "#00800080")
+
+# 바 플롯을 그립니다
+ggplot(auc_df, aes(x=Model, y=AUC, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(AUC, 3)), size=4, vjust=-0.5) +
+  ylim(0, 1) +
+  coord_flip() +
+  labs(title="Comparison of Model AUC", x="Model", y="AUC") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.y=element_blank()) 
+
+```
+
+
+각 모델에 대해서 AUC 를 구하고 시각화를 하였을때 Decison Tree < Random Forest < Logistic Regression 순으로 
+
+AUC 의 성능이 보이고 있습니다.
+
+<br>
+
+### Compare KS Statistic
+
+마지막 성능 비교로 KS Statistic 를 비교하는 과정을 진행
+
+```{r}
+# 각 모델에 대한 예측 생성
+logit_pred_ks <- predict(logit_cancer, newdata = breast_cancer.val, type = "response")
+tree_pred_ks <- predict(tree_cancer, newdata = breast_cancer.val, type = "prob")[,2]
+rf_pred_ks <- predict(rf_cancer, newdata = breast_cancer.val, type = "prob")[,2]
+
+# '양성'과 '악성' 진단 결과에 대한 예측 확률을 분리합니다
+logit_pred_B <- logit_pred_ks[breast_cancer.val$diagnosis == "B"]
+logit_pred_M <- logit_pred_ks[breast_cancer.val$diagnosis == "M"]
+
+tree_pred_B <- tree_pred_ks[breast_cancer.val$diagnosis == "B"]
+tree_pred_M <- tree_pred_ks[breast_cancer.val$diagnosis == "M"]
+
+rf_pred_B <- rf_pred_ks[breast_cancer.val$diagnosis == "B"]
+rf_pred_M <- rf_pred_ks[breast_cancer.val$diagnosis == "M"]
+
+# 각 모델의 KS 통계량을 계산합니다
+ks_logit <- ks.test(logit_pred_B, logit_pred_M)$statistic
+ks_tree <- ks.test(tree_pred_B, tree_pred_M)$statistic
+ks_rf <- ks.test(rf_pred_B, rf_pred_M)$statistic
+```
+
+
+각 모델별 진단결과에 대한 누적분포를 그래프로 시각화 작업
+
+```{r}
+# Logistic Regression 모델의 그래프
+df_logit_B <- data.frame(Diagnosis = rep("B", length(logit_pred_B)), Probability = logit_pred_B)
+df_logit_M <- data.frame(Diagnosis = rep("M", length(logit_pred_M)), Probability = logit_pred_M)
+df_logit <- rbind(df_logit_B, df_logit_M)
+
+ggplot(df_logit, aes(x=Probability, color=Diagnosis)) +
+  stat_ecdf(geom = "step", size=1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(title=paste("Logistic Regression: Cumulative Distribution of Predicted Probabilities\nKS Statistic:", round(ks_logit, 3))) +
+  theme_bw() 
+
+# Decision Tree 모델의 그래프
+df_tree_B <- data.frame(Diagnosis = rep("B", length(tree_pred_B)), Probability = tree_pred_B)
+df_tree_M <- data.frame(Diagnosis = rep("M", length(tree_pred_M)), Probability = tree_pred_M)
+df_tree <- rbind(df_tree_B, df_tree_M)
+
+ggplot(df_tree, aes(x=Probability, color=Diagnosis)) +
+  stat_ecdf(geom = "step", size=1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(title=paste("Decision Tree: Cumulative Distribution of Predicted Probabilities\nKS Statistic:", round(ks_tree, 3))) +
+  theme_bw() 
+
+# Random Forest 모델의 그래프
+df_rf_B <- data.frame(Diagnosis = rep("B", length(rf_pred_B)), Probability = rf_pred_B)
+df_rf_M <- data.frame(Diagnosis = rep("M", length(rf_pred_M)), Probability = rf_pred_M)
+df_rf <- rbind(df_rf_B, df_rf_M)
+
+ggplot(df_rf, aes(x=Probability, color=Diagnosis)) +
+  stat_ecdf(geom = "step", size=1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(title=paste("Random Forest: Cumulative Distribution of Predicted Probabilities\nKS Statistic:", round(ks_rf, 3))) +
+  theme_bw() 
+
+```
+
+<그래프에 대한 부연 설명>
+
+1) '양성’과 ‘악성’ 진단 결과에 대한 예측 확률을 분리
+
+2) 이를 사용하여 각각의 누적분포(ECDF)를 계산
+
+3) 누적분포를 시각화하여 각 예측 확률 값이나 그보다 낮은 값이 관찰될 누적 확률을 보여줌
+
+```{r}
+# KS 통계량을 데이터 프레임으로 만듭니다
+ks_df <- data.frame(Model = c("Logistic Regression", "Decision Tree", "Random Forest"),
+                    KS = c(ks_logit, ks_tree, ks_rf))
+
+# Model 변수를 팩터로 변환하고 레벨 순서를 지정합니다
+ks_df$Model <- factor(ks_df$Model, levels=c("Random Forest", "Decision Tree", "Logistic Regression"))
+
+# 바 플롯을 그립니다
+ggplot(ks_df, aes(x=Model, y=KS, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  ylim(0, 1) +
+  geom_text(aes(label=round(KS, 3)), size=4, vjust=-0.5) +
+  coord_flip() +
+  labs(title="Comparison of Model KS Statistic", x="Model", y="KS Statistic") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.y=element_blank())
+
+```
+
+KS Statistic을 보았을때 Decison Tree < Random Forest < Logistic Regression 순으로 
+
+KS Statistic 의 수치값을 보이고 있는데 이때 KS 통계량이 클수록 두 분포 사이의 차이가 크다는 것을 의미
+
+따라서, Decison Tree < Random Forest < Logistic Regression 순으로 
+
+'양성’과 ‘악성’ 진단 결과에 대한 예측 확률의 분포를 가장 잘 구별한다고 해석할수 있습니다.
+
+<br>
+
+### Compare All
+
+*Logistic Regresion, Decision Tree, Random Forest* 에 대해서 *Accuracy, AUC, KS Statistic* 을 비교하였는데
+
+이러한 성능 비교를 한 그래프 내에서 비교하는 과정을 진행하였습니다.
+
+
+```{r}
+# 필요한 라이브러리를 불러옵니다
+library(gridExtra)
+
+# 각각의 그래프를 생성합니다
+p1 <- ggplot(acc_df, aes(x=Accuracy, y=Model, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(Accuracy, 3)), size=4, vjust=-0.5) +
+  coord_flip() +
+  xlim(0, 1) +
+  labs(title="Accuracy") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x = element_text(angle = 15))
+
+p2 <- ggplot(auc_df, aes(x=AUC, y=Model, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(AUC, 3)), size=4, vjust=-0.5) +
+  coord_flip() +
+  xlim(0, 1) +
+  labs(title="AUC") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x = element_text(angle = 15)) 
+
+p3 <- ggplot(ks_df, aes(x=KS, y=Model, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(KS, 3)), size=4, vjust=-0.5) +
+  coord_flip() +
+  xlim(0, 1) +
+  labs(title="KS Statistic") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x = element_text(angle = 15))
+
+# 3개의 그래프를 하나의 그래프로 표현합니다
+grid.arrange(p1, p2, p3, nrow=1)
+
+```
+
+*Logistic Regresion*, *Decision Tree*, *Random Forest* 3가지 모델에 대해서 성능 비교를 진행하였을때 
+
+전반적으로 *Logistic Regresion* 모델이 다른 모델에 비해 안정적으로 좋은 성능을 보이고 있어 
+
+*Logistic Regresion* 모델을 이용하여 평점표 모형을 개발하도록 구상하였습니다.
+
+## 향후 추가 내용
+
+*Logistic Regresion* 을 통해 평점표 개발하는 코드 작성 계획중..
+
+<br><br>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
