@@ -1,0 +1,38 @@
+---
+title: "Breast cancer diagnosis using scorecard"
+author: "티타임"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: simplex
+    fig.width: 10
+    fig.height: 10
+    toc: yes
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 0. 패키지 불러오기기
+```{r, message=FALSE}
+library(tidyverse)
+library(GGally)
+library(corrplot)
+library(car)
+library(reshape)
+```
+
+<br><br><br>
+
+## 1. 데이터 불러오기
+```{r}
+breast_cancer_data <- read.csv(".//data//breast_cancer.csv")
+
+# 변수명
+colnames(breast_cancer_data)
+
+# 변수의 개수
+ncol(breast_cancer_data)
+```
