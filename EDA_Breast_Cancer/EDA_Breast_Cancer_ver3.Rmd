@@ -132,7 +132,7 @@ str(breast_cancer_data)
 
 ### 2-1. 같은 변수에 대한 다른 지표 변수 간 상관성 {.tabset}
 #### Radius
-```{r, fig.width=5, fig.height=5}
+```{r}
  ggpairs(breast_cancer_data[,c(3, 13, 23, 2)],
         aes(color=diagnosis, alpha=0.3),
         lower=list(combo=wrap("facethist", binwidth=0.5)),
