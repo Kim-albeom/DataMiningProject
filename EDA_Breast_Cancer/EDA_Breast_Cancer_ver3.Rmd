@@ -1,0 +1,363 @@
+---
+title: "EDA_sample_Rmd"
+author: "티타임"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: simplex
+    fig.width: 10
+    fig.height: 10
+    toc: yes
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 0. 패키지 불러오기기
+```{r, message=FALSE}
+library(tidyverse)
+library(GGally)
+library(corrplot)
+library(car)
+library(reshape)
+```
+
+<br><br><br>
+
+## 1. 데이터 불러오기
+```{r}
+breast_cancer_data <- read.csv(".//data//breast_cancer.csv")
+
+# 변수명
+colnames(breast_cancer_data)
+
+# 변수의 개수
+ncol(breast_cancer_data)
+```
+
+```{r}
+# 전체 데이터의 개수
+(total_count = nrow(breast_cancer_data))
+
+# 양성 데이터의 개수
+(Benign = nrow(breast_cancer_data %>% filter(diagnosis == "B")))
+B_prob = Benign/total_count
+names(Benign) = "Benign"
+
+# 악성 데이터의 개수
+(Malignant = nrow(breast_cancer_data %>% filter(diagnosis == "M"))) 
+M_prob = Malignant/total_count
+names(Malignant) = "Malignant"
+
+total_prob = data.frame(name = c("Benign", "Malignant"), value=c(B_prob, M_prob))
+
+# 전체에서의 각 진단 비중.
+ggplot(total_prob, aes(x=name, y=value, fill=name)) +
+  geom_bar(stat="identity", width=0.5) +
+  geom_text(aes(label = sprintf("%.2f", value)), position=position_stack(vjust=0.5), color="black", size=5) +
+  labs(title="Cumulative barplot", y="Propotion", x="") +
+  scale_fill_manual(values = c("Benign"= "#F2ABA6", "Malignant"="#6AD3D6")) +
+  coord_flip() + 
+  theme(legend.position = "none")
+
+```
+
+ 양성 종양인 데이터(357EA)가 악성 종양인 데이터(212EA)보다 많다는 것을 확인할 수 있습니다.
+
+* __Breast_Cancer 데이터__(UCL MACHINE LEARNING)
+  - __변수__(총 33가지)
+    + __id__(1)
+    + __diagnosis__(2): Benign(양성=B), Malignant(악성=M)
+    + __radius_mean, se, worst__(3, 13, 23): 중심에서 둘레까지의 거리의 평균, 표준오차, 최대값
+    + __texture_mean, se, worst__(4, 14, 24): gray-scale 값의 표준편차의 평균, 표준오차, 최대값
+    + __perimeter_mean, se, worst__(5, 15, 25): 핵 종양의 크기의 평균, 표준오차, 최대값
+    + __area_mean, se, worst__(6, 16, 26): 핵 종양의 면적의 평균, 표준오차, 최대값
+    + __smoothness_mean, se, worst__(7, 17, 27): 반지름 길이의 지역 변동의 평균, 표준오차, 최대값
+    + __compactness_mean, se, worst__(8, 18, 28): $radius^2/area-1.0$의 평균, 표준오차, 최대값
+    + __concavity_mean, se, worst__(9, 19, 29): 등고선의 오목한 부분의 심각도 평균, 표준오차, 최대값
+    + __concave.points_mean, se, worst__(10, 20, 30): 등고선의 오목한 부분의 수의 평균, 표준오차, 최대값
+    + __symmetry_mean, se, worst__(11, 21, 31): 대칭성의 평균, 표준오차, 최대값
+    + __fractal_dimension_mean, se, worst__(12, 22, 32): $coastline approximation^{-1}$(해안선 근사치의 역수)의 평균, 표준오차, 최대값
+    + __X__(33): 미 기재 변수
+  - __변수__: 569개 
+    + __Benign__(양성)의 수: 357개
+    + __Malignant__(악성)의 수: 212개
+    
+<br><br>
+
+ 각 변수에 대해서 결측치가 존재하는지 확인하겠습니다.
+
+```{r}
+# 결측치 확인.
+colSums(is.na(breast_cancer_data))
+```
+
+ 
+<br>
+
+ X라는 변수열은 전체가 NA로 이루어져 있기 때문에 X 변수열을 제거하겠습니다.
+
+```{r}
+# X(33번 변수열) 제거거
+breast_cancer_data = subset(breast_cancer_data, select=c(-33))
+
+# 확인
+str(breast_cancer_data)
+```
+
+<br>
+
+ X 변수열을 제거하고 `str()`로 확인하니, diagnosis 변수가 Char형 변수인 것을 확인했습니다. 이에 factor로 변환해줍니다.
+ 
+```{r}
+breast_cancer_data$diagnosis= as.factor(breast_cancer_data$diagnosis)
+
+str(breast_cancer_data)
+```
+ 
+<br><br><br>
+
+## 2. 분포에 대한 시각화.
+ 
+ 다중공선성 문제를 해결하기 위한 1차적 변수 선택을 위해 변수간의 상관성을 다양하게 확인해보겠습니다.
+ 
+* $\rho$의 기준(절대값)
+  - $\rho \ge 0.8$: 높은 상관성
+  - $0.4 \le \rho < 0.8$: 중간 정도의 상관성
+  - $\rho < 0.4$: 약한 상관성성
+
+<br>
+
+### 2-1. 같은 변수에 대한 다른 지표 변수 간 상관성 {.tabset}
+#### Radius
+```{r, fig.width=5, fig.height=5}
+ ggpairs(breast_cancer_data[,c(3, 13, 23, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Radius Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ radius에서 mean과 worst 간의 상관성이 강하게 나오고, mean과 se, se와 worst 간에는 약하지는 않지만 중간 정도의 상관성을 보인다.
+
+#### Texture
+```{r}
+ggpairs(breast_cancer_data[,c(4, 14, 24, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="texture Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+
+```
+
+ texture에서 mean과 worst 간의 상관성이 강하게 나오고, mean과 se, se와 worst 간에는 약한 상관성을 보인다.
+
+#### Perimeter
+```{r}
+ggpairs(breast_cancer_data[,c(5, 15, 25, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Perimeter Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ perimeter에서 mean과 worst 간의 상관성이 강하게 나오고, mean과 se, se와 worst 간에는 약하지는 않지만 어느 정도 중간 정도의 상관성을 보인다.
+ 
+#### Area
+```{r}
+ggpairs(breast_cancer_data[,c(6, 16, 26, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Area Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ area에서 mean, se, worst 간 상관성이 높게 나온다.
+
+#### smoothness
+
+```{r}
+ggpairs(breast_cancer_data[,c(7, 17, 27, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Smoothness Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ area에서 mean과 worst 간 상관성은 높게 나오나, mean과 se, se와 worst 간의 상관성은 낮게 나온다.
+ 
+#### compactness
+
+```{r}
+ggpairs(breast_cancer_data[,c(8, 18, 28, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Compactness Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+ 
+  compactness에서 mean과 worst 간 상관성은 높게 나오고, mean과 se, se와 worst 간에는 중간 정도의 상관성이 나온다.
+  
+#### concavity
+```{r}
+ggpairs(breast_cancer_data[,c(9, 19, 29, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Concavity Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  concavity에서 mean과 worst 간 상관성은 높게 나오고, mean과 se, se와 worst 간에는 중간 정도의 상관성이 나온다.
+  
+#### concave.points
+```{r}
+ggpairs(breast_cancer_data[,c(10, 20, 30, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Concave.points Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  concave.points에서 mean과 worst 간 상관성은 높게 나오고, mean과 se, se와 worst 간에는 중간 정도의 상관성이 나온다.
+  
+#### symmetry
+```{r}
+ggpairs(breast_cancer_data[,c(11, 21, 31, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Symmetry Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  symmetry에서 mean과 worst 간에는 중간정도의 상관성, mean과 se, se와 worst 간에는 낮은 상관성을 보인다다.
+  
+#### fractal.dimension
+```{r}
+ggpairs(breast_cancer_data[,c(12, 22, 32, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Fractal.dimension Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  fractal.dimension에서 mean, se, worst 간에는 중간 정도의 상관성을 보인다.
+
+### {-}
+
+<br>
+
+> mean과 worst 간의 상관계수는 대부분 0.8이상으로, 최소도 0.7이상으로 높게 나왔으나, mean과 se, se와 worst 간의 상관계수는 중간 혹은 그 이하가 나와 (mean  se worst) 3가지 그룹 30개의 변수에서 (mean se) 2개의 그룹의 변수만을 선택해서 진행하도록 하겠습니다.
+
+<br>
+
+```{r}
+breast_cancer_data = subset(breast_cancer_data, select=c(1:22)) # worst 그룹을 제거
+```
+
+
+
+<br><br>
+
+### 2-2. 그룹 간의 상관성(worst 그룹 제외). {.tabset}
+#### mean group
+```{r, fig.width=15, fig.height=15}
+corrplot(cor(breast_cancer_data[,c(3:12)]),
+         type ="upper",
+         order = "original",
+         tl.col = "black",
+         addCoef.col = "white",
+         number.cex = 2,
+         tl.cex = 2,
+         title = "Mean Correlation",
+         cex.main=4,
+         cl.cex=2,
+         diag=F,
+         mar=c(0,0,5,0))
+  
+```
+
+ (radius perimeter area) 간의 상관계수가 0.8을 넘어 높은 상관성을 보이고, (compactness concavity concave.points) 간의 상관계수도 0.8을 넘어 높은 상관성을 보입니다.. 이 외에도 (area concave.points), (perimeter concave.points) (radius concave.points)가 0.8을 넘어 높은 상관성을 보입니다.
+
+#### se group
+```{r, fig.width=15, fig.height=15}
+corrplot(cor(breast_cancer_data[,c(13:22)]),
+         type ="upper",
+         order = "original",
+         tl.col = "black",
+         addCoef.col = "white",
+         number.cex = 2,
+         cl.cex= 2,
+         tl.cex = 2,
+         title = "SE Correlation",
+         cex.main = 4,
+         diag=F,
+         mar=c(0,0,5,0))
+```
+
+ (radius perimeter area) 간의 상관계수가 0.8을 넘어 높은 상관성을 보기ㅗ, (compactness concavity concave.points) 간의 상관계수도 0.7을 넘어 어느 정도 높은 상관성을 보입니다. 이 외에도 (compactness fractal.dimension)의 상관계수가 0.8을 넘어 높은 상관성을 보입니다.
+ 
+### {-}
+
+<br>
+
+>  (radius perimeter area), (compactness concavity concave.points) 두 가지 그룹에 대해서 내부 변수 간의 상관성이 높게 나오는 것이 확인됩니다. 
+>  따라서 (radius perimeter area)에서 radius만을, (compactness concavity concave.points)에서 compactness만을 선택해서 mean, se 2개 그룹의 (radius texture smoothness compactness symmetry fractal.dimension) 총 12개의 변수를 최종 선택하겠습니다.
+
+<br>
+
+```{r}
+data_selected = breast_cancer_data %>% select(!contains(c("perimeter", "area", "concavity", "concave.points")))
+```
+
+<br><br>
+
+### 2-3. diagnosis에 따른 변수들의 분포
+#### 2-3-1. mean{.tabset}
+##### box plot
+```{r}
+breast_melt1 = melt(data_selected[,c(2:8)], id.vars = "diagnosis")
+ggplot(breast_melt1, aes(x=variable, y=value)) +
+  geom_boxplot(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+##### density plot
+```{r}
+ggplot(breast_melt1, aes(x=value, groups=variable)) +
+  geom_density(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+<br><br><br>
+
+#### 2-3-2. se{.tabset}
+##### boxplot
+```{r}
+breast_melt2 = melt(data_selected[,c(2,9:14)], id.vars = "diagnosis")
+ggplot(breast_melt1, aes(x=variable, y=value)) +
+  geom_boxplot(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+##### density plot
+```{r}
+ggplot(breast_melt2, aes(x=value, groups=variable)) +
+  geom_density(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+#### {-}
+
+> 양성("B", "Benign")일 때보다 악성("M", "Malignant")일 때, 각 변수에 대해서 평균 값이 더 크게 나옵니다. 또한 분포 자체가 더 큰 쪽으로 분포되어있습니다. 따라서 악성 종양인 사람이 양성보다 종양의 크기면에서도 더욱 크고, 더 불규칙적인 형태라는 것을 생각할 수 있습니다.
