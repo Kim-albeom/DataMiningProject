@@ -1,0 +1,458 @@
+---
+title: "Modeling_ver5_Rmd"
+author: "티타임"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: simplex
+    fig.width: 10
+    fig.height: 10
+    toc: yes
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 0. 서론
+
+Breast Cancer Wisconsin(Diagnostic) Data set은 주사기로 종양에서 세포를 흡인해서 현미경으로 세포를 관찰해 그 특징들을 mean, se, worst로 정리한 데이터 셋입니다. 저희는 이 데이터를 통해서 양성 종양과 악성 종양을 정확하게 구분할 수 있는 모델을 구현하고자 합니다. 이를 통해 오진율을 줄이는 것을 목표로 잡았습니다.
+
+### 0-1. 패키지 불러오기
+
+```{r, message=FALSE}
+# plotting and reshaping data
+library(tidyverse)
+library(GGally)
+library(reshape)
+
+# Correlation
+library(corrplot)
+
+# Confusion Matrix
+library(caret)
+
+# ROC Curve
+library(ROCR)
+
+# Model
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+# Plot combine
+library(gridExtra)
+```
+
+<br><br><br>
+
+## 1. 데이터 불러오기 및 확인
+
+```{r}
+# 데이터 불러오기
+breast_cancer_data <- read.csv("../data/breast_cancer.csv")
+
+```
+
+<br>
+
+```{r}
+breast_cancer_data = subset(breast_cancer_data, select=c(-33))
+
+colnames(breast_cancer_data)
+```
+
+<br><br>
+
+### 1-2. diagnosis 변수를 factor로 변환
+
+```{r}
+# diagnosis를 char에서 factor로 변환
+breast_cancer_data$diagnosis = as.factor(breast_cancer_data$diagnosis)
+```
+
+```{r}
+data_selected = breast_cancer_data %>% select(!contains(c("perimeter", "area", "concavity", "concave.points")))
+
+
+colnames(data_selected) # id와 diagnosis를 제외한 나머지가 선택된 변수
+```
+
+
+
+<br>
+
+## 3. Modeling
+
+먼저 569EA의 데이터를 train(70%), validation(30%)로 나눠주겠습니다.
+
+-   train_index: 전체 데이터 중 70%를 샘플링한 데이터
+-   breast_cancer_train: train 데이터
+-   breast_cancer_valid: validation 데이터
+
+```{r}
+set.seed(123)
+
+T_count = nrow(breast_cancer_data)
+
+# 고정된 인덱스 생성
+fixed_index = sample(1:T_count)
+
+# train과 valid의 비율을 7:3 으로 설정
+train_ratio = 0.7
+train_rows = round(T_count * train_ratio)
+
+# 고정된 인덱스에서 train 데이터의 인덱스 선택
+train_index = fixed_index[1:train_rows]
+
+# train과 valid로 데이터 나누기.
+breast_cancer_train = data_selected[train_index,]
+breast_cancer_valid = data_selected[-train_index,]
+
+train_count = train_rows
+valid_count = T_count - train_count
+
+cat("train data: ", train_count, "EA\n", "validation data: ", valid_count, "EA")
+```
+
+<br><br>
+
+
+### 4-2. Scorecard
+
+```{r}
+# valdation 데이터 이용
+selected_data <- breast_cancer_valid %>%
+  select(id, diagnosis, radius_mean, texture_mean, smoothness_mean, compactness_mean, 
+         symmetry_mean,radius_se, texture_se, fractal_dimension_se)
+
+head(selected_data)
+```
+
+
+```{r}
+# 최종 변수 리스트
+var_list <- c('radius_mean', 'texture_mean', 'smoothness_mean', 'compactness_mean', 'symmetry_mean', 'radius_se', 'texture_se', 'fractal_dimension_se')
+
+# 분포 기반 범주화 및 범주 범위 출력
+for (var in var_list) {
+  # 범주화
+  breast_cancer_train <- breast_cancer_train %>%
+    mutate(!!paste0(var, "_cat") := cut(!!sym(var), breaks=quantile(!!sym(var), probs=seq(0, 1, by=0.25)), include.lowest=TRUE))
+  
+  # 범주 범위 출력
+  cat(paste("Variable:", var, "\n"))
+  print(summary(as.factor(breast_cancer_train[[paste0(var, "_cat")]])))
+}
+```
+
+
+```{r}
+# 각 변수에 대해 주어진 범위에 따라 점수를 부여
+score_03_data <- selected_data %>%
+  mutate(radius_mean_score = ifelse(radius_mean <= 10, 9.5,
+                                    ifelse(radius_mean <= 13, 12.7,
+                                           ifelse(radius_mean <= 16, 14.6, 21.8))),
+
+         texture_mean_score = ifelse(texture_mean <= 16, 5.8,
+                                     ifelse(texture_mean <= 19, 7.6,
+                                            ifelse(texture_mean <= 22, 8.8, 12.0))),
+                        
+         smoothness_mean_score = ifelse(smoothness_mean <= 0.08, 5.4,
+                                        ifelse(smoothness_mean <= 0.09, 7.1,
+                                               ifelse(smoothness_mean <= 0.12, 7.9, 10.6))),
+
+         compactness_mean_score = ifelse(compactness_mean <= 0.06, 1.1,
+                                         ifelse(compactness_mean <= 0.09, 2.1,
+                                                ifelse(compactness_mean <= 16, 3.0, 5.8))),
+
+         symmetry_mean_score = ifelse(symmetry_mean <= 0.16, 2.5,
+                                      ifelse(symmetry_mean <= 0.18, 3.1,
+                                             ifelse(symmetry_mean <= 0.20, 3.4, 4.5))),
+
+         radius_se_score = ifelse(radius_se <= 0.22, 0.8,
+                                  ifelse(radius_se <= 0.33, 1.2,
+                                         ifelse(radius_se <= 0.44, 1.8, 4.6))),
+
+         texture_se_score = ifelse(texture_se <= 0.90, -0.8,
+                                   ifelse(texture_se <= 1.20, -1.4,
+                                          ifelse(texture_se <= 1.50, -1.9, -3.7))),
+
+         fractal_dimension_se_score = ifelse(fractal_dimension_se <= 0.002, -0.5,
+                                             ifelse(fractal_dimension_se <= 0.003, -1.0,
+                                                    ifelse(fractal_dimension_se <= 0.004, -1.4, -6.4))))
+
+
+# _score로 끝나는 모든 변수들의 합을 계산하여 score라는 새로운 열을 생성
+score_03_vars <- grep("_score$", names(score_03_data), value = TRUE)
+
+score_03_data <- score_03_data %>% mutate(score = rowSums(.[score_03_vars]))
+
+```
+
+```{r}
+group_B <- score_03_data$score[score_03_data$diagnosis == "B"]
+group_M <- score_03_data$score[score_03_data$diagnosis == "M"]
+
+# KS 통계량 계산
+ks_result_03 <- ks.test(group_B, group_M)
+
+# KS 통계량 출력
+print(ks_result_03$statistic)
+
+```
+
+```{r}
+# 누적 B/M 구성비 분포 그래프 그리기
+ggplot() +
+  stat_ecdf(data = data.frame(score = group_B, group = "B"), aes(score, colour = group)) +
+  stat_ecdf(data = data.frame(score = group_M, group = "M"), aes(score, colour = group)) +
+  labs(x = "Score", y = "Cumulative Proportion", 
+       title = "Cumulative Distribution Plot for Score",
+       subtitle = "Blue: Group B, Red: Group M")
+
+```
+
+
+
+```{r}
+# 'B'와 'M' 진단 그룹의 실제 라벨 생성
+actual <- ifelse(score_03_data$diagnosis == "B", 0, 1)
+
+# 예측 객체 생성
+pred <- prediction(score_03_data$score, actual)
+
+# ROC 곡선 계산
+roc_obj <- performance(pred, "tpr", "fpr")
+
+# AUROC 값 계산
+auc_obj <- performance(pred, "auc")
+
+# AUROC 값 출력
+print(auc_obj@y.values[[1]])
+```
+
+> 3개의 스코어링 모델 중 2, 3번 모델이 1번 모델에 비해서 KS 통계량이랑 AUROC값이 높아 성능이 좋은 것으로 확인됩니다.
+
+> 그 중 3번 모델이 AUROC가 0.9534526로 2번 모델보다 높아서, 성능이 뛰어남을 확인했습니다. 따라서 3번 모델을 스코어링 모델로 사용하겠습니다.
+
+<br>
+
+
+=================== 이후 update 버전 =============================
+
+
+5. Scoring model 적용
+--------------------------------------- 
+
+
+
+<br>
+
+### AUROC 이용한 score 임계치 구하기
+
+ROC 곡선은 여러 임계값에서의 진짜 양성률 (True Positive Rate, TPR)과 거짓 양성률 (False Positive Rate, FPR)을 나타냅니다. 이 곡선 아래의 면적이 AUROC이며, 이 값이 1에 가까울수록 모델의 성능이 좋다고 판단합니다.
+
+따라서, AUROC 값을 최대화하는 점수 임계값을 선택하면, 해당 임계값을 기준으로 'B’와 'M’을 구분하는 데 사용할 수 있습니다. 이는 ROC 곡선 분석을 통해 수행할 수 있습니다.
+
+```{r}
+# ROCR 패키지 로드
+library(ROCR)
+
+# 예측 객체 생성
+pred <- prediction(score_03_data$score, actual)
+
+# 최적의 임계값 찾기
+perf <- performance(pred, "sens", "spec")
+decision.values <- data.frame(cut = perf@alpha.values[[1]], 
+                              sensitivity = perf@x.values[[1]], 
+                              specificity = perf@y.values[[1]])
+optimal.cut <- decision.values[which.max(decision.values$sensitivity + decision.values$specificity), "cut"]
+
+# 최적의 임계값 출력
+print(optimal.cut)
+
+
+```
+
+ROC 곡선에서 최적의 임계값을 찾는 과정을 진행하였고 **score의 임계값은 35**
+
+
+<br>
+
+
+### 점수 계산
+입력되는 환자의 데이터에 대해서 각 변수들에 대한 점수를 계산  
+각 변수별로 계산된 점수의 총점에 따라 진단을 하는 함수를 작성  
+
+```{r}
+# 함수 생성
+calculate_score_and_diagnose <- function(data) {
+  data <- data %>%
+    mutate(radius_mean_score = ifelse(radius_mean <= 10, 9.5,
+                                       ifelse(radius_mean <= 13, 12.7,
+                                              ifelse(radius_mean <= 16, 14.6, 21.8))),
+           texture_mean_score = ifelse(texture_mean <= 16, 5.8,
+                                       ifelse(texture_mean <= 19, 7.6,
+                                              ifelse(texture_mean <= 22, 8.8, 12.0))),
+           smoothness_mean_score = ifelse(smoothness_mean <= 0.08, 5.4,
+                                          ifelse(smoothness_mean <= 0.09, 7.1,
+                                                 ifelse(smoothness_mean <= 0.12, 7.9, 10.6))),
+           compactness_mean_score = ifelse(compactness_mean <= 0.06, 1.1,
+                                           ifelse(compactness_mean <= 0.09, 2.1,
+                                                  ifelse(compactness_mean <= 16, 3.0, 5.8))),
+           symmetry_mean_score = ifelse(symmetry_mean <= 0.16, 2.5,
+                                        ifelse(symmetry_mean <= 0.18, 3.1,
+                                               ifelse(symmetry_mean <= 0.20, 3.4, 4.5))),
+           radius_se_score = ifelse(radius_se <= 0.22, 0.8,
+                                    ifelse(radius_se <= 0.33, 1.2,
+                                           ifelse(radius_se <= 0.44, 1.8, 4.6))),
+           texture_se_score = ifelse(texture_se <= 0.90, -0.8,
+                                     ifelse(texture_se <= 1.20, -1.4,
+                                            ifelse(texture_se <= 1.50, -1.9, -3.7))),
+           fractal_dimension_se_score = ifelse(fractal_dimension_se <= 0.002, -0.5,
+                                               ifelse(fractal_dimension_se <= 0.003, -1.0,
+                                                      ifelse(fractal_dimension_se <= 0.004, -1.4, -6.4))))
+  
+  score_vars <- grep("_score$", names(data), value = TRUE)
+  
+  data <- data %>% mutate(score = rowSums(.[score_vars]))
+  
+  data <- data %>% mutate(diagnosis = ifelse(score > 35, "M", "B"))
+  
+  return(data)
+}
+
+
+```
+
+### 적용할 데이터 준비
+평가데이터에서 악성환자와 양성환자 데이터 확보
+
+```{r}
+# valdation 데이터 이용
+sample_data <- breast_cancer_valid %>%
+  select(id, diagnosis, radius_mean, texture_mean, smoothness_mean, compactness_mean, 
+         symmetry_mean,radius_se, texture_se, fractal_dimension_se)
+
+# diagnosis가 'M'인 첫 번째 행 선택
+M_data <- selected_data %>% 
+  filter(diagnosis == 'M') %>% 
+  slice(1)
+
+# diagnosis가 'B'인 첫 번째 행 선택
+B_data <- selected_data %>% 
+  filter(diagnosis == 'B') %>% 
+  slice(1)
+```
+
+
+```{r}
+M_data # Malignant(악성=M)인 환자데이터
+B_data # Benign(양성=B)인 환자데이터
+```
+
+<br>
+
+### 스코어링 모형 적용
+Benign(양성)인 환자와 Malignant(악성)인 환자에 대해서 각각 스코어링 모형에 적용
+
+#### Benign(양성)인 환자데이터
+
+```{r, fig.width=10, fig.height=6}
+# B_data # Benign(양성=B)인 환자데이터
+use_data = B_data
+
+result <- calculate_score_and_diagnose(use_data)
+
+# 첫번째 그래프
+# "_score"로 끝나는 변수만 선택합니다.
+result_score <- dplyr::select(result, ends_with("_score"))
+
+# 데이터를 길게 변형합니다.
+result_score_long <- tidyr::pivot_longer(result_score, everything(), names_to = "variable", values_to = "value")
+
+# 막대그래프를 그립니다.
+p1 <- ggplot(result_score_long, aes(x = variable, y = value)) +
+  geom_bar(stat = "identity", width = 0.5) +  
+  coord_flip() +  
+  labs(x = "Variable", y = "Score for each variable", title = "Score")
+
+# 두번째 그래프
+# "score" 열만 선택합니다.
+result_score <- result$score 
+
+# 데이터 프레임을 생성합니다.
+df <- data.frame(score = result_score)
+
+# 막대그래프를 그립니다.
+p2 <-  ggplot(df, aes(x = "", y = score, fill = (score > 35))) +
+  geom_bar(stat = "identity", width = 0.4) +
+  scale_fill_manual(values = c("TRUE" = "#FF000080", "FALSE" = "grey"), labels = c("TRUE" = "Malignant", "FALSE" = "Benign"), name = "diagnosis") +
+  ylim(0,50) +
+  geom_hline(yintercept = 35, linetype = "dashed", color = "red") +
+  geom_text(aes(label=score), vjust=-0.3, size=3.5) +
+  theme_bw() +
+  labs(title = "Total score", x = "Total score", y = "Score")
+
+# 두 그래프를 합칩니다.
+grid.arrange(p1, p2, ncol=2, widths = c(3, 1))  # p1과 p2의 비율을 3:1로 설정합니다.
+
+
+```
+
+왼쪽 각각의 변수에 대한 스코어를 구해 막대그래프를 출력해주었고 오른쪽 그래프에서 각 변수들에 대한 스코어를 총합하여 35보다 작게 나옴으로 Benign(양성)으로 판정하는 모습을 보여줌으로서 원래 Benign인 환자 데이터를 넣어주었을때 Benign을 출력해줌으로 좋은 예측을 해주고 있음
+
+
+#### Malignant(악성)인 환자데이터
+
+```{r, fig.width=10, fig.height=6}
+# M_data # # Malignant(악성=M)인 환자데이터
+use_data = M_data
+
+result <- calculate_score_and_diagnose(use_data)
+
+# 첫번째 그래프
+# "_score"로 끝나는 변수만 선택합니다.
+result_score <- dplyr::select(result, ends_with("_score"))
+
+# 데이터를 길게 변형합니다.
+result_score_long <- tidyr::pivot_longer(result_score, everything(), names_to = "variable", values_to = "value")
+
+# 막대그래프를 그립니다.
+p1 <- ggplot(result_score_long, aes(x = variable, y = value)) +
+  geom_bar(stat = "identity", width = 0.5) +  
+  coord_flip() +  
+  labs(x = "Variable", y = "Score for each variable", title = "Score")
+
+# 두번째 그래프
+# "score" 열만 선택합니다.
+result_score <- result$score 
+
+# 데이터 프레임을 생성합니다.
+df <- data.frame(score = result_score)
+
+# 막대그래프를 그립니다.
+p2 <-  ggplot(df, aes(x = "", y = score, fill = (score > 35))) +
+  geom_bar(stat = "identity", width = 0.4) +
+  scale_fill_manual(values = c("TRUE" = "#FF000080", "FALSE" = "grey"), labels = c("TRUE" = "Malignant", "FALSE" = "Benign"), name = "diagnosis") +
+  ylim(0,50) +
+  geom_hline(yintercept = 35, linetype = "dashed", color = "red") +
+  geom_text(aes(label=score), vjust=-0.3, size=3.5) +
+  theme_bw() +
+  labs(title = "Total score", x = "Total score", y = "Score")
+
+# 두 그래프를 합칩니다.
+grid.arrange(p1, p2, ncol=2, widths = c(3, 1))  # p1과 p2의 비율을 3:1로 설정합니다.
+
+
+```
+
+오른쪽 그래프에서 각 변수들에 대한 스코어를 총합하여 35보다 크게 나옴으로 Malignant(악성)으로 판정하는 모습을 보여줌으로서 원래 Malignant인 환자 데이터를 넣어주었을때 Malignant을 출력해줌으로 좋은 예측을 해주고 있음
+
+
+<br><br>
+
+
+
