@@ -15,24 +15,1156 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## 0. 패키지 불러오기기
+## 0. 패키지 불러오기
 ```{r, message=FALSE}
+# plotting and reshaping data
 library(tidyverse)
 library(GGally)
-library(corrplot)
-library(car)
 library(reshape)
+
+# Correlation
+library(corrplot)
+
+# Confusion Matrix
+library(caret)
+
+# ROC Curve
+library(ROCR)
+
+# Model
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+# Plot combine
+library(gridExtra)
 ```
 
 <br><br><br>
 
-## 1. 데이터 불러오기
+## 1. 데이터 불러오기 및 확인
 ```{r}
+# 데이터 불러오기
 breast_cancer_data <- read.csv(".//data//breast_cancer.csv")
 
-# 변수명
-colnames(breast_cancer_data)
-
-# 변수의 개수
-ncol(breast_cancer_data)
+# 데이터 확인하기.
+str(breast_cancer_data)
 ```
+
+ 현재 `diagnosis` 변수가 char형 변수로 되어 있기 때문에 분석을 위해서 factor형으로 변경하겠습니다. 그러나 그 전에 결측치가 있는지 확인을 하고 있다면 제거를 해주겠습니다.
+ 
+### 1-1. 결측치 확인.
+```{r}
+# 각 변수열 별 결측치 개수 확인.
+colSums(is.na(breast_cancer_data))
+```
+
+ 결과를 봤을 때, `X`라는 변수 열의 모든 값이 결측치인 것을 확인할 수 있습니다. 따라서 `X` 변수열(33)을 제거해주도록 하겠습니다.
+
+<br>
+
+```{r}
+breast_cancer_data = subset(breast_cancer_data, select=c(-33))
+
+colnames(breast_cancer_data)
+```
+
+
+<br><br>
+
+### 1-2. diagnosis 변수를 factor로 변환
+```{r}
+# diagnosis를 char에서 factor로 변환
+breast_cancer_data$diagnosis = as.factor(breast_cancer_data$diagnosis)
+
+str(breast_cancer_data)
+```
+
+ `diagnosis` 변수가 이제 factor로 변환된 것이 확인됩니다.
+ 
+### 1-3. diagnosis 변수의 분포  
+ 
+ `diagnosis`의 결과인 `Benign`, `Malignant`에 관측데이터가 얼마나 할당되어 있는지 확인하겠습니다.
+
+```{r}
+# 전체 및 진단 별 데이터의 수
+T_count = nrow(breast_cancer_data)
+B_count = nrow(breast_cancer_data %>% filter(diagnosis == "B"))
+M_count = T_count - B_count
+
+# 진단 별 데이터의 비율
+B_prob = B_count / T_count
+M_prob = M_count / T_count
+
+diag_dist = data.frame(result = c("Benign", "Malignant"), 
+                       count = c(B_count, M_count),
+                       prob = c(B_prob, M_prob))
+
+# 결과
+print(diag_dist)
+
+# barplot으로 시각화
+ggplot(diag_dist, aes(x=result, y=prob, fill=result)) +
+  geom_bar(stat="identity", width=0.5) +
+  geom_text(aes(label=sprintf("%d", count)), position=position_stack(vjust = 0.5), color="black", size=5) +
+  labs(title="Comparing data count between Benign and Malignant", y="Prob", x="") +
+  scale_fill_manual(values = c("Benign"= "#F2ABA6", "Malignant"="#6AD3D6")) +
+  coord_flip() +
+  theme(legend.position = "none")
+```
+
+ 위 처럼 양성(`Benign`)의 데이터가 악성(`Malignant`)보다 데이터가 더 많다는 것을 확인할 수 있습니다.
+ 
+<br><br><br> 
+ 
+## 2. 분포에 대한 시각화
+ 데이터를 통한 분석 및 모델링 이전에 다중공선성 문제 해결을 위한 1차 변수 선택을 위해 변수 간의 상관성을 확인해 보겠습니다. 상관성에 대한 기준은 아래와 같이 정했습니다.
+
+* $\rho$의 기준(절대값)
+  - $\rho \ge 0.8$: 높은 상관성 
+  - $0.4 \le \rho \lt 0.8$: 중간 정도의 상관성
+  - $\rho \lt 0.4$: 약한 상관성
+  
+<br><br>
+
+### 2-1. 같은 변수에 대한 다른 지표 변수 간 상관성 {.tabset}
+#### Radius
+```{r}
+ ggpairs(breast_cancer_data[,c(3, 13, 23, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Radius Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ radius에서 mean과 worst 간의 상관성이 강하게 나오고, mean과 se, se와 worst 간에는 약하지는 않지만 중간 정도의 상관성을 보인다.
+
+#### Texture
+```{r}
+ggpairs(breast_cancer_data[,c(4, 14, 24, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="texture Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+
+```
+
+ texture에서 mean과 worst 간의 상관성이 강하게 나오고, mean과 se, se와 worst 간에는 약한 상관성을 보인다.
+
+#### Perimeter
+```{r}
+ggpairs(breast_cancer_data[,c(5, 15, 25, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Perimeter Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ perimeter에서 mean과 worst 간의 상관성이 강하게 나오고, mean과 se, se와 worst 간에는 약하지는 않지만 어느 정도 중간 정도의 상관성을 보인다.
+ 
+#### Area
+```{r}
+ggpairs(breast_cancer_data[,c(6, 16, 26, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Area Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ area에서 mean, se, worst 간 상관성이 높게 나온다.
+
+#### smoothness
+
+```{r}
+ggpairs(breast_cancer_data[,c(7, 17, 27, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Smoothness Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+ area에서 mean과 worst 간 상관성은 높게 나오나, mean과 se, se와 worst 간의 상관성은 낮게 나온다.
+ 
+#### compactness
+
+```{r}
+ggpairs(breast_cancer_data[,c(8, 18, 28, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Compactness Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+ 
+  compactness에서 mean과 worst 간 상관성은 높게 나오고, mean과 se, se와 worst 간에는 중간 정도의 상관성이 나온다.
+  
+#### concavity
+```{r}
+ggpairs(breast_cancer_data[,c(9, 19, 29, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Concavity Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  concavity에서 mean과 worst 간 상관성은 높게 나오고, mean과 se, se와 worst 간에는 중간 정도의 상관성이 나온다.
+  
+#### concave.points
+```{r}
+ggpairs(breast_cancer_data[,c(10, 20, 30, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Concave.points Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  concave.points에서 mean과 worst 간 상관성은 높게 나오고, mean과 se, se와 worst 간에는 중간 정도의 상관성이 나온다.
+  
+#### symmetry
+```{r}
+ggpairs(breast_cancer_data[,c(11, 21, 31, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Symmetry Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  symmetry에서 mean과 worst 간에는 중간정도의 상관성, mean과 se, se와 worst 간에는 낮은 상관성을 보인다다.
+  
+#### fractal.dimension
+```{r}
+ggpairs(breast_cancer_data[,c(12, 22, 32, 2)],
+        aes(color=diagnosis, alpha=0.3),
+        lower=list(combo=wrap("facethist", binwidth=0.5)),
+        upper=list(continuous = wrap("cor", size=3))) +
+  labs(title="Fractal.dimension Plot and Correlation") +
+  theme(plot.title=element_text(face="bold", color="black", hjust=0.5, size=10))
+```
+
+  fractal.dimension에서 mean, se, worst 간에는 중간 정도의 상관성을 보인다.
+
+### {-}
+
+<br>
+
+> mean과 worst 간의 상관계수는 대부분 0.8이상으로, 최소도 0.7이상으로 높게 나왔으나, mean과 se, se와 worst 간의 상관계수는 중간 혹은 그 이하가 나와 (mean  se worst) 3가지 그룹 30개의 변수에서 (mean se) 2개의 그룹의 변수만을 선택해서 진행하도록 하겠습니다.
+
+<br>
+
+```{r}
+breast_cancer_data = subset(breast_cancer_data, select=c(1:22)) # worst 그룹을 제거
+```
+
+
+
+<br><br>
+
+### 2-2. 그룹별 내부 변수 간 상관성(worst 그룹 제외). {.tabset}
+#### mean group
+```{r, fig.width=15, fig.height=15}
+corrplot(cor(breast_cancer_data[,c(3:12)]),
+         type ="upper",
+         order = "original",
+         tl.col = "black",
+         addCoef.col = "white",
+         number.cex = 2,
+         tl.cex = 2,
+         title = "Mean Correlation",
+         cex.main=4,
+         cl.cex=2,
+         diag=F,
+         mar=c(0,0,5,0))
+  
+```
+
+ (radius perimeter area) 간의 상관계수가 0.8을 넘어 높은 상관성을 보이고, (compactness concavity concave.points) 간의 상관계수도 0.8을 넘어 높은 상관성을 보입니다.. 이 외에도 (area concave.points), (perimeter concave.points) (radius concave.points)가 0.8을 넘어 높은 상관성을 보입니다.
+
+#### se group
+```{r, fig.width=15, fig.height=15}
+corrplot(cor(breast_cancer_data[,c(13:22)]),
+         type ="upper",
+         order = "original",
+         tl.col = "black",
+         addCoef.col = "white",
+         number.cex = 2,
+         cl.cex= 2,
+         tl.cex = 2,
+         title = "SE Correlation",
+         cex.main = 4,
+         diag=F,
+         mar=c(0,0,5,0))
+```
+
+ (radius perimeter area) 간의 상관계수가 0.8을 넘어 높은 상관성을 보이고, (compactness concavity concave.points) 간의 상관계수도 0.7을 넘어 어느 정도 높은 상관성을 보입니다. 이 외에도 (compactness fractal.dimension)의 상관계수가 0.8을 넘어 높은 상관성을 보입니다.
+ 
+### {-}
+
+<br>
+
+>  (radius perimeter area), (compactness concavity concave.points) 두 가지 그룹에 대해서 내부 변수 간의 상관성이 높게 나오는 것이 확인됩니다. 
+>  따라서 (radius perimeter area)에서 radius만을, (compactness concavity concave.points)에서 compactness만을 선택해서 mean, se 2개 그룹의 (radius texture smoothness compactness symmetry fractal.dimension) 총 12개의 변수를 최종 선택하겠습니다.
+
+<br>
+
+```{r}
+data_selected = breast_cancer_data %>% select(!contains(c("perimeter", "area", "concavity", "concave.points")))
+
+
+colnames(data_selected) # id와 diagnosis를 제외한 나머지가 선택된 변수
+```
+
+* 선택된 변수(12개)
+  - radius_mean, radius_se
+  - texture_mean, texture_se
+  - smoothness_mean, smoothness_se
+  - compactness_mean, compactness_se
+  - symmetry_mean, symmetry_se
+  - fractal_dimension_mean, fractal_dimension_se
+  
+  
+<br><br>
+
+### 2-3. diagnosis에 따른 변수들의 분포
+#### 2-3-1. mean{.tabset}
+##### box plot
+```{r}
+breast_melt1 = melt(data_selected[,c(2:8)], id.vars = "diagnosis")
+ggplot(breast_melt1, aes(x=variable, y=value)) +
+  geom_boxplot(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+##### density plot
+```{r}
+ggplot(breast_melt1, aes(x=value, groups=variable)) +
+  geom_density(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+<br><br><br>
+
+#### 2-3-2. se{.tabset}
+##### boxplot
+```{r}
+breast_melt2 = melt(data_selected[,c(2,9:14)], id.vars = "diagnosis")
+ggplot(breast_melt1, aes(x=variable, y=value)) +
+  geom_boxplot(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+##### density plot
+```{r}
+ggplot(breast_melt2, aes(x=value, groups=variable)) +
+  geom_density(aes(alpha=0.3,fill=diagnosis)) +
+  facet_wrap(~variable,scale="free")
+```
+
+#### {-}
+
+> 양성("B", "Benign")일 때보다 악성("M", "Malignant")일 때, 각 변수에 대해서 평균 값이 더 크게 나옵니다. 또한 분포 자체가 더 큰 쪽으로 분포되어있습니다. 따라서 악성 종양인 사람이 양성보다 종양의 크기면에서도 더욱 크고, 더 불규칙적인 형태라는 것을 생각할 수 있습니다.
+
+<br><br><br>
+
+## 3. Modeling
+
+ 먼저 569EA의 데이터를 train(70%), validation(30%)로 나눠주겠습니다.
+
+* train_index: 전체 데이터 중 70%를 샘플링한 데이터
+* breast_cancer_train: train 데이터
+* breast_cancer_valid: validation 데이터
+
+```{r}
+set.seed(123)
+
+# 고정된 인덱스 생성
+fixed_index = sample(1:T_count)
+
+# train과 valid의 비율을 7:3 으로 설정
+train_ratio = 0.7
+train_rows = round(T_count * train_ratio)
+
+# 고정된 인덱스에서 train 데이터의 인덱스 선택
+train_index = fixed_index[1:train_rows]
+
+# train과 valid로 데이터 나누기.
+breast_cancer_train = data_selected[train_index,]
+breast_cancer_valid = data_selected[-train_index,]
+
+train_count = train_rows
+valid_count = T_count - train_count
+
+cat("train data: ", train_count, "EA\n", "validation data: ", valid_count, "EA")
+```
+
+<br><br>
+
+### 3-1. Comparing ML Model
+ 1차적인 변수 선택을 통해 선택된 변수들을 가지고 모델링을 하겠습니다. 모델은 $Logistic\ Regression, Decision\ Tree,\ Random\ Forest$ 3가지로 진행하겠습니다.
+
+```{r, warning=FALSE}
+# formula 설정
+formula = diagnosis ~ 
+  radius_mean + texture_mean + smoothness_mean + 
+  compactness_mean + symmetry_mean +fractal_dimension_mean + 
+  radius_se + texture_se + smoothness_se + compactness_se + 
+  symmetry_se + fractal_dimension_se 
+
+# Model 학습
+logit_cancer = glm(formula, data = breast_cancer_train, family = binomial)
+tree_cancer = rpart(formula, data = breast_cancer_train, method="class")
+rf_cancer = randomForest(diagnosis ~ ., data = breast_cancer_train)
+```
+
+<br><br>
+
+#### 3-1-1. Compare Accuracy
+
+ 먼저 정확도를 비교하겠습니다.
+ 
+```{r}
+# 각 모델에 대한 예측 생성
+logit_pred_acc = predict(logit_cancer, newdata = breast_cancer_valid, type="response")
+tree_pred_acc = predict(tree_cancer, newdata = breast_cancer_valid, type = "class")
+rf_pred_acc = predict(rf_cancer, newdata = breast_cancer_valid)
+
+# 예측을 이진 클래스로 변환
+logit_pred_class = ifelse(logit_pred_acc > 0.5, "M", "B")
+
+# Accuracy 계산
+logit_acc = mean(logit_pred_class == breast_cancer_valid$diagnosis)
+tree_acc = mean(tree_pred_acc == breast_cancer_valid$diagnosis)
+rf_acc = mean(rf_pred_acc == breast_cancer_valid$diagnosis)
+
+# Accuracy를 data frame으로 변환
+acc_df = data.frame(Model = c("Logistic Regression", "Decision Tree", "Random Forest"),
+                    Accuracy = c(logit_acc, tree_acc, rf_acc))
+
+# Model 변수를 factor화하고 level을 지정
+acc_df$Model = factor(acc_df$Model, levels=c("Random Forest", "Decision Tree", "Logistic Regression"))
+
+# 색상을 지정
+colors = c("#0000FF80", "#FF000080", "#00800080")
+
+# barplot으로 시각화
+ggplot(acc_df, aes(x=Model, y=Accuracy, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  ylim(0,1) +
+  geom_text(aes(label=round(Accuracy, 4)), size = 5, vjust=-0.5) +
+  coord_flip() +
+  labs(title="Comparison of Model Accuracy", x="Model", y="Accuracy") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.y = element_blank())
+```
+ 
+ 각 모델에 대해서 정확도를 구하고 시각화를 했습니다. 위와 같이 $Decision\ Tree \lt Random\ Forest \lt Logistic\ Regression$ 순서로 정확도의 성능을 보입니다. 그러나 여기서 $Random\  Forest$ 와 $Logistic\  Regression$의 정확도가 비슷하게 나와 AUROC도 비교해보도록 하겠습니다.
+ 
+<br><br>
+ 
+#### 3-1-2. Compare ROC and AUROC
+##### ROC Curve
+```{r, warning=FALSE}
+# 각 모델에 대한 예측 생성
+logit_pred_roc <- predict(logit_cancer, newdata = breast_cancer_valid, type = "response")
+tree_pred_roc <- predict(tree_cancer, newdata = breast_cancer_valid, type = "prob")[,2]
+rf_pred_roc <- predict(rf_cancer, newdata = breast_cancer_valid, type = "prob")[,2]
+
+# 예측 결과와 실제 레이블을 사용하여 예측 객체를 생성합니다
+pred_logit <- prediction(logit_pred_roc, breast_cancer_valid$diagnosis)
+pred_tree <- prediction(tree_pred_roc, breast_cancer_valid$diagnosis)
+pred_rf <- prediction(rf_pred_roc, breast_cancer_valid$diagnosis)
+
+# ROC Curve를 계산
+perf_logit <- performance(pred_logit, "tpr", "fpr")
+perf_tree <- performance(pred_tree, "tpr", "fpr")
+perf_rf <- performance(pred_rf, "tpr", "fpr")
+
+# data frame을 생성합니다
+df <- data.frame(
+  TPR = c(perf_logit@y.values[[1]], perf_tree@y.values[[1]], perf_rf@y.values[[1]]),
+  FPR = c(perf_logit@x.values[[1]], perf_tree@x.values[[1]], perf_rf@x.values[[1]]),
+  Model = c(rep("Logistic Regression", length(perf_logit@y.values[[1]])),
+            rep("Decision Tree", length(perf_tree@y.values[[1]])),
+            rep("Random Forest", length(perf_rf@y.values[[1]])))
+)
+
+# ROC Curve plot
+ggplot(df, aes(x=FPR, y=TPR, color=Model)) +
+  geom_line(size=1.2) +  
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") + 
+  labs(title="ROC Curves", x="False Positive Rate", y="True Positive Rate") +
+  theme_bw() +
+  scale_color_manual(values=c("#0000FF80", "#FF000080", "#00800080"), 
+                     breaks=c("Logistic Regression", "Decision Tree", "Random Forest"))
+```
+
+ 위 ROC Curve를 보았을 때 $Decision\ Tree \lt Random\ Forest \approx Logistic\ Regression$ 인 것을 확인할 수 있습니다. 또한 여기서도 Accuracy를 보았을 때와 동일하게 $Random\ Forest$와 $Logistic\ Regression$의 차이가 크지 않아 보이기 때문에 수치적으로 정확하게 확인해보겠습니다.
+
+<br>
+
+##### AUC
+```{r}
+# AUC
+auc_logit <- performance(pred_logit, "auc")@y.values[[1]]
+auc_tree <- performance(pred_tree, "auc")@y.values[[1]]
+auc_rf <- performance(pred_rf, "auc")@y.values[[1]]
+
+# AUC를 data frame으로 변환합니다
+auc_df <- data.frame(Model = c("Logistic Regression", "Decision Tree", "Random Forest"),
+                     AUC = c(auc_logit, auc_tree, auc_rf))
+
+# Model 변수를 factor화 하고 level 지정.
+auc_df$Model <- factor(auc_df$Model, levels=c("Random Forest", "Decision Tree", "Logistic Regression"))
+
+# 색상을 지정
+colors <- c("#0000FF80", "#FF000080", "#00800080")
+
+# barplot
+ggplot(auc_df, aes(x=Model, y=AUC, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(AUC, 3)), size=4, vjust=-0.5) +
+  ylim(0, 1) +
+  coord_flip() +
+  labs(title="Comparison of Model AUROC",y="AUROC") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.y=element_blank()) 
+```
+
+ 각 모델에 대해서 AUROC를 구하고 시각화를 해줬습니다.$Random\ Forest$와 $Logistic\ Regression$의 차이가 크지는 않지만 $Decision\ Tree \lt Random\ Forest \lt Logistic\ Regression$의 순서로 AUROC 성능을 보이는 것을 확인할 수 있습니다.
+ 
+<br><br> 
+
+#### 3-1-3. Compare All
+
+$Logistic\ Regression,\ Decision\ Tree,\ Random\ Forest$에 대해서 __Accuracy__와 __AUC__를 비교했습니다. 이를 동시에 비교해 보겠습니다.
+
+```{r}
+# 각각의 그래프를 생성
+p1 <- ggplot(acc_df, aes(x=Accuracy, y=Model, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(Accuracy, 3)), size=5) +
+  xlim(0, 1) +
+  labs(title="Accuracy") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.x=element_blank(), axis.title.y=element_blank())
+
+p2 <- ggplot(auc_df, aes(x=AUC, y=Model, fill=Model)) +
+  geom_bar(stat="identity", width=0.5, fill=colors) +
+  geom_text(aes(label=round(AUC, 3)), size=5)  +
+  xlim(0, 1) +
+  labs(title="AUROC") +
+  theme_bw() +
+  theme(legend.position="none", axis.title.x=element_blank(), axis.title.y=element_blank()) 
+
+# 하나로 변환
+grid.arrange(p1, p2, ncol=1)
+```
+
+> $Logistic\ Regression,\ Random\ Forest$ 두 모델이 상대적으로 $Decision\ Tree$에 비해서 성능이 좋게 나타납니다.
+> $Logistic\ Regression$이 $Random\ Forest$에 비해서 미미하지만 더욱 좋은 성능을 보이고 있습니다.
+> 따라서 모형의 안정성과 해석적인 부분을 고려했을 때, $Logistic\ Regression$을 이용하여 Scoring model을 개발하는 것이 바람직하다는 판단을 했습니다.
+
+<br><br>
+
+### 3-2. Enhance Logistic Regression Model
+ $Logistic\ Regression$을 학습할 때, cutoff를 0.5로 지정하여 트리모델 간의 동일한 조건 하에 비교를 진행하였는데, $Logistic\ Regression$에 대해서 cutoff값을 다양하게 하여 비교를 했습니다.
+
+<br>
+
+##### Change cutoff value
+```{r, warning=FALSE}
+# 변수 선택 방법 설정
+methods <- c("none", "forward", "backward", "both")
+
+# 절단값 설정
+cutoffs <- seq(0.4, 0.6, by = 0.05)
+
+# 결과를 저장할 데이터 프레임 생성
+results <- data.frame()
+
+# 각 변수 선택 방법에 대해
+for (method in methods) {
+  # 변수 선택
+  if (method == "none") {
+    model <- glm(formula, data=breast_cancer_train, family=binomial)
+  } else {
+    model <- step(glm(formula, data=breast_cancer_train, family=binomial), direction=method, trace=0)
+  }
+  
+  # 각 절단값에 대해
+  for (cutoff in cutoffs) {
+    # 예측 생성
+    pred_prob <- predict(model, newdata = breast_cancer_valid, type = "response")
+    pred_class <- ifelse(pred_prob > cutoff, "M", "B")
+    
+    # 정확도 계산
+    acc <- mean(pred_class == breast_cancer_valid$diagnosis)
+    
+    # AUROC 계산
+    pred <- prediction(pred_prob, breast_cancer_valid$diagnosis)
+    perf <- performance(pred, measure = "auc")
+    auroc <- perf@y.values[[1]]  # AUROC 값
+    
+    # '양성'과 '악성' 진단 결과에 대한 예측 확률을 분리합니다
+    pred_prob_B <- pred_prob[breast_cancer_valid$diagnosis == "B"]
+    pred_prob_M <- pred_prob[breast_cancer_valid$diagnosis == "M"]
+    
+    # AIC 계산
+    aic <- model$aic
+    
+    # 결과 저장
+    results <- rbind(results, data.frame(Method=method, Cutoff=cutoff, Accuracy=acc, AUROC=auroc, AIC=aic))
+  }
+}
+
+# 결과 출력
+print(results)
+```
+ 위에서 ML 모형과의 비교를 할 때, cutoff값을 0.5로 설정했고, 이번에는 cutoff값에 변화를 주면서 차이를 확인했는데, 유의미한 변화가 보이지 않아서 기존에 했던 0.5로 cutoff값을 확정지어서 진행했습니다.
+ 
+<br><br>
+
+##### Compare AIC
+```{r, warning=FALSE}
+# 변수 선택 방법 설정
+methods <- c("none", "forward", "backward", "both")
+
+# 절단값 설정
+cutoff <- 0.5
+
+# 결과를 저장할 데이터 프레임 생성
+results <- data.frame()
+
+# 각 변수 선택 방법에 대해
+for (method in methods) {
+  # 변수 선택
+  if (method == "none") {
+    model <- glm(formula, data=breast_cancer_train, family=binomial())
+  } else {
+    model <- step(glm(formula, data=breast_cancer_train, family=binomial()), direction=method, trace=0)
+  }
+  
+  # 예측 생성
+  pred_prob <- predict(model, newdata = breast_cancer_valid, type = "response")
+  pred_class <- ifelse(pred_prob > cutoff, "M", "B")
+  
+  # 정확도 계산
+  acc <- mean(pred_class == breast_cancer_valid$diagnosis)
+  
+  # AUROC 계산
+  pred <- prediction(pred_prob, breast_cancer_valid$diagnosis)
+  perf <- performance(pred, measure = "auc")
+  auroc <- perf@y.values[[1]]  # AUROC 값
+  
+  # AIC 계산
+  aic <- model$aic
+  
+  # 결과 저장
+  results <- rbind(results, data.frame(Method=method, Cutoff=cutoff, Accuracy=acc, AUROC=auroc, AIC=aic))
+}
+
+# 결과 출력
+print(results)
+```
+
+ __Accuracy__, __AUROC__ 값은 모델 간의 차이가 유의미하지 않아 __AIC__가 낮은 model 중 backward를 사용한 $Logistic\ Regression$ 모형을 이용해서 평점표 모형을 개발하겠습니다.
+ 
+<br><br> 
+
+## 4. Scoring Model with Logistic model
+### 4-1. 2nd time variable selection
+```{r}
+# Model
+(model <- step(glm(formula, data=breast_cancer_train, family=binomial), direction="backward"))
+```
+
+ `backward elimination`을 통해서 기존의 12개의 변수에서 `fractal_dimension_mean`, `smoothness_se`, `compactness_se`, `symmetry_se`를 제외한 8개의 변수가 최종적으로 선택되었습니다.
+
+* 종속변수 
+  - __diagnosis__: 진단 결과("B": 양성, "M": 악성)
+* 독립변수
+  - __radius_mean__: 중심에서 둘레까지의 거리의 평균
+  - __texture_mean__: gray-scale 값의 평균
+  - __smoothness_mean__: 반지름 길이의 지역 변동의 평균
+  - __compactness_mean__: $radius^2/area-1.0$의 평균
+  - __symmetry_mean__: 대칭성의 평균
+  - __radius_se__: 중심에서 둘레까지의 거리의 표준오차
+  - __texture_se__: gray-scale 값의 표준오차
+  - __fractal_dimension_se__: $(costline\ approximation)^-1$의 표준오차
+ 
+<br><br>
+
+### 4-2. Scorecard
+```{r}
+# 최종 변수 리스트
+var_list <- c('radius_mean', 'texture_mean', 'smoothness_mean', 'compactness_mean', 'symmetry_mean', 'radius_se', 'texture_se', 'fractal_dimension_se')
+
+# 분포 기반 범주화 및 범주 범위 출력
+for (var in var_list) {
+  # 범주화
+  breast_cancer_train <- breast_cancer_train %>%
+    mutate(!!paste0(var, "_cat") := cut(!!sym(var), breaks=quantile(!!sym(var), probs=seq(0, 1, by=0.25)), include.lowest=TRUE))
+  
+  # 범주 범위 출력
+  cat(paste("Variable:", var, "\n"))
+  print(summary(as.factor(breast_cancer_train[[paste0(var, "_cat")]])))
+}
+```
+<br><br>
+
+[변수별 범주 설정]
+
+|Variable             |                 1  |                  2 |                3 |                4 |
+|:--------------------|-------------------:|-------------------:|-----------------:|-----------------:|
+|radius_mean          | [6.98,11.6]        | (11.6,13.2]        | (13.2,15.4]      | (15.4,27.2]      |
+|texture_mean         | [10.7,16.2]        | (16.2,18.9]        | (18.9,21.8]      | (21.8,33.6]      |
+|smoothness_mean      | [0.0526,0.085]     | (0.085,0.0946]     | (0.0946,0.105]   | (0.105,0.163]    |
+|compactness_mean     | [0.0194,0.0631]    | (0.0631,0.0896]    | (0.0896,0.13]    | (0.13,0.287]     |
+|symmetry_mean        | [0.117,0.163]      | (0.163,0.179]      | (0.179,0.195]    | (0.195,0.304]    |
+|radius_se            | [0.112,0.232]      | (0.232,0.316]      | (0.316,0.468]    | (0.468,1.51]     | 
+|texture_se           | [0.36,0.856]       | (0.856,1.14]       | (1.14,1.48]      | (1.48,3.65]      |
+|fractal_dimension_se | [0.000895,0.00222] | (0.00222,0.00313]  | (0.00313,0.0045] | (0.0045,0.0298]  |
+
+<br>
+
+|Variable             |          1  |                  2  |                 3  |           4 |
+|:--------------------|------------:|--------------------:|-------------------:|------------:|
+|radius_mean          | x < 10      | 10 <= x < 13        | 13 <= x < 16       | 16 <= x     |
+|texture_mean         | x < 16      | 16 <= x < 19        | 19 <= x < 22       | 22 <=  x    |
+|smoothness_mean      | x < 0.08    | 0.08 <= x < 0.09    | 0.09 <= x < 0.1    | 0.10 < x    |
+|compactness_mean     | x < 0.06    | 0.06 <= x < 0.09    | 0.09 <= x < 0.12   | 0.12 < x    |
+|symmetry_mean        | x < 0.16    | 0.16 <= x < 0.18    | 0.18 <= x < 0.20   | 0.20 < x    |
+|radius_se            | x < 0.22    | 0.22 <= x < 0.33    | 0.33 <= x < 0.44   | 0.44 < x    | 
+|texture_se           | x < 0.90    | 0.90 <= x < 1.20    | 1.20 <= x < 1.50   | 1.50 < x    |
+|fractal_dimension_se | x < 0.002   | 0.002 <= x < 0.003  | 0.003 <= x < 0.004 | 0.004 < x   |
+
+```{r}
+# 회귀 모델의 계수값
+model[1]
+```
+<br>
+
+|Variable             |          1  |                  2  |                 3  |           4 |       coef  |
+|:--------------------|------------:|--------------------:|-------------------:|------------:|------------:|
+|radius_mean          | x < 10      | 10 <= x < 13        | 13 <= x < 16       | 16 <= x     |  1.0262     |
+|texture_mean         | x < 16      | 16 <= x < 19        | 19 <= x < 22       | 22 <=  x    |  0.4345     |
+|smoothness_mean      | x < 0.08    | 0.08 <= x < 0.09    | 0.09 <= x < 0.1    | 0.10 < x    |  79.7946    |
+|compactness_mean     | x < 0.06    | 0.06 <= x < 0.09    | 0.09 <= x < 0.12   | 0.12 < x    |  27.9530    |
+|symmetry_mean        | x < 0.16    | 0.16 <= x < 0.18    | 0.18 <= x < 0.20   | 0.20 < x    |  18.3689    |
+|radius_se            | x < 0.22    | 0.22 <= x < 0.33    | 0.33 <= x < 0.44   | 0.44 < x    |  4.7003     | 
+|texture_se           | x < 0.90    | 0.90 <= x < 1.20    | 1.20 <= x < 1.50   | 1.50 < x    | -1.4729     |
+|fractal_dimension_se | x < 0.002   | 0.002 <= x < 0.003  | 0.003 <= x < 0.004 | 0.004 < x   | -375.6956   |
+
+<br><br>
+
+#### 4-2-1. 1st Scoring Model
+
+각 class 값에 계수값을 곱해주는 방법으로 구현했습니다.
+
+<br>
+
+|Variable             |          1  |         2  |       3  |         4 |       coef  |
+|:--------------------|------------:|-----------:|---------:|----------:|------------:|
+|radius_mean          |  1.0262     |  2.0524    | 3.0786   | 4.1048    |  1.0262     |
+|texture_mean         |  0.4345     |  0.869     | 1.3035   | 1.738     |  0.4345     |
+|smoothness_mean      |  79.7946    |  159.5892  | 239.3838 | 319.1784  |  79.7946    |
+|compactness_mean     |  27.9530    |  55.906    | 83.859   | 111.812   |  27.9530    |
+|symmetry_mean        |  18.3689    |  36.7378   | 55.1067  | 73.4756   |  18.3689    |
+|radius_se            |  4.7003     |  9.4006    | 14.1009  | 18.8012   |  4.7003     | 
+|texture_se           | -1.4729     | -2.9458    | -4.4187  | -5.8916   | -1.4729     |
+|fractal_dimension_se | -375.6956   | -751.391   | -1127.09 | -1502.78  | -375.6956   |
+
+<br>
+
+ 그 후 각 값에 2000을 더해주고 반올림해서 정수 값으로 표현했는데, 2000을 더해준 이유는 모든 값을 양의 정수로 표현하기 위해서 입니다.
+
+|Variable             | 1    | 2     | 3    | 4    | coef        |
+|:--------------------|-----:|------:|-----:|-----:|------------:|
+|radius_mean          | 2001 | 2002  | 2003 | 2004 |  1.0262     |
+|texture_mean         | 2000 | 2001  | 2001 | 2002 |  0.4345     |
+|smoothness_mean      | 2080 | 2160  | 2239 | 2319 |  79.7946    |
+|compactness_mean     | 2028 | 2056  | 2084 | 2112 |  27.9530    |
+|symmetry_mean        | 2018 | 2037  | 2055 | 2073 |  18.3689    |
+|radius_se            | 2005 | 2009  | 2014 | 2019 |  4.7003     | 
+|texture_se           | 1999 | 1997  | 1996 | 1994 | -1.4729     |
+|fractal_dimension_se | 1624 | 1249  | 873  | 497  | -375.6956   |
+
+<br><br>
+
+```{r}
+# valdation 데이터 이용
+selected_data <- breast_cancer_valid %>%
+  select(diagnosis, radius_mean, texture_mean, smoothness_mean, compactness_mean, 
+         symmetry_mean,radius_se, texture_se, fractal_dimension_se)
+
+head(selected_data)
+```
+
+```{r}
+# 각 변수에 대해 주어진 범위에 따라 클래스와 점수를 부여
+score_01_data <- selected_data %>%
+  mutate(radius_mean_class = ifelse(radius_mean <= 10, 1,
+                                     ifelse(radius_mean <= 13, 2,
+                                            ifelse(radius_mean <= 16, 3, 4))),
+         radius_mean_score = ifelse(radius_mean <= 10, 2001,
+                                    ifelse(radius_mean <= 13, 2002,
+                                           ifelse(radius_mean <= 16, 2003, 2004))),
+         texture_mean_class = ifelse(texture_mean <= 16, 1,
+                                     ifelse(texture_mean <= 19, 2,
+                                            ifelse(texture_mean <= 22, 3, 4))),
+         texture_mean_score = ifelse(texture_mean <= 16, 2000,
+                                     ifelse(texture_mean <= 19, 2001,
+                                            ifelse(texture_mean <= 22, 2001, 2002))),
+         smoothness_mean_class = ifelse(smoothness_mean <= 0.08, 1,
+                                        ifelse(smoothness_mean <= 0.09, 2,
+                                               ifelse(smoothness_mean <= 0.12, 3, 4))),
+         smoothness_mean_score = ifelse(smoothness_mean <= 0.08, 2080,
+                                        ifelse(smoothness_mean <= 0.09, 2160,
+                                               ifelse(smoothness_mean <= 0.12, 2239, 2319))),
+         compactness_mean_class = ifelse(compactness_mean <= 0.06, 1,
+                                         ifelse(compactness_mean <= 0.09, 2,
+                                                ifelse(compactness_mean <= 16, 3, 4))),
+         compactness_mean_score = ifelse(compactness_mean <= 0.06, 2028,
+                                         ifelse(compactness_mean <= 0.09, 2056,
+                                                ifelse(compactness_mean <= 16, 2084, 2112))),
+         symmetry_mean_class = ifelse(symmetry_mean <= 0.16, 1,
+                                      ifelse(symmetry_mean <= 0.18, 2,
+                                             ifelse(symmetry_mean <= 0.20, 3, 4))),
+         symmetry_mean_score = ifelse(symmetry_mean <= 0.16, 2018,
+                                      ifelse(symmetry_mean <= 0.18, 2037,
+                                             ifelse(symmetry_mean <= 0.20, 2055, 2073))),
+         radius_se_class = ifelse(radius_se <= 0.22, 1,
+                                  ifelse(radius_se <= 0.33, 2,
+                                         ifelse(radius_se <= 0.44, 3, 4))),
+         radius_se_score = ifelse(radius_se <= 0.24, 2005,
+                                  ifelse(radius_se <= 0.32, 2009,
+                                         ifelse(radius_se <= 0.48, 2014, 2019))),
+         texture_se_class = ifelse(texture_se <= 0.90, 1,
+                                   ifelse(texture_se <= 1.20, 2,
+                                          ifelse(texture_se <= 1.50, 3, 4))),
+         texture_se_score = ifelse(texture_se <= 0.90, 1999,
+                                   ifelse(texture_se <= 1.20, 1997,
+                                          ifelse(texture_se <= 1.50, 1996, 1994))),
+         fractal_dimension_se_class = ifelse(fractal_dimension_se <= 0.002, 1,
+                                             ifelse(fractal_dimension_se <= 0.003, 2,
+                                                    ifelse(fractal_dimension_se <= 0.004, 3, 4))),
+         fractal_dimension_se_score = ifelse(fractal_dimension_se <= 0.002, 1624,
+                                             ifelse(fractal_dimension_se <= 0.003, 1249,
+                                                    ifelse(fractal_dimension_se <= 0.004, 873, 497))))
+
+
+# _score로 끝나는 모든 변수들의 합을 계산하여 score라는 새로운 열을 생성
+score_01_vars <- grep("_score$", names(score_01_data), value = TRUE)
+
+score_01_data <- score_01_data %>% mutate(score = rowSums(.[score_01_vars]))
+```
+```{r}
+group_B <- score_01_data$score[score_01_data$diagnosis == "B"]
+group_M <- score_01_data$score[score_01_data$diagnosis == "M"]
+
+# KS 통계량 계산
+ks_result_01 <- ks.test(group_B, group_M)
+
+# KS 통계량 출력
+print(ks_result_01$statistic)
+```
+```{r}
+# 누적 B/M 구성비 분포 그래프 그리기
+ggplot() +
+  stat_ecdf(data = data.frame(score = group_B, group = "B"), aes(score, colour = group)) +
+  stat_ecdf(data = data.frame(score = group_M, group = "M"), aes(score, colour = group)) +
+  labs(x = "Score", y = "Cumulative Proportion", 
+       title = "Cumulative Distribution Plot for Score",
+       subtitle = "Blue: Group B, Red: Group M")
+```
+```{r}
+# 'B'와 'M' 진단 그룹의 실제 라벨 생성
+actual <- ifelse(score_01_data$diagnosis == "B", 0, 1)
+
+# 예측 객체 생성
+pred <- prediction(score_01_data$score, actual)
+
+# ROC 곡선 계산
+roc_obj <- performance(pred, "tpr", "fpr")
+
+# AUROC 값 계산
+auc_obj <- performance(pred, "auc")
+
+# AUROC 값 출력
+print(auc_obj@y.values[[1]])
+```
+
+<br><br>
+
+#### 4-2-2. 2nd Scoring Model
+ 두 번째 평점표 모형은 각 변수의 계수값을 구간의 급간 값에 곱해주고, 그 후 다시 10을 곱한 후 일의 자리까지 반올림 해준 후, class가 증가 할때 1씩 증가하도록 했습니다.
+ 
+<br>
+
+|Variable             |          1  |                  2  |                 3  |           4 |       coef  |
+|:--------------------|------------:|--------------------:|-------------------:|------------:|------------:|
+|radius_mean          | x < 10      | 10 <= x < 13        | 13 <= x < 16       | 16 <= x     |  1.0262     |
+|texture_mean         | x < 16      | 16 <= x < 19        | 19 <= x < 22       | 22 <=  x    |  0.4345     |
+|smoothness_mean      | x < 0.08    | 0.08 <= x < 0.09    | 0.09 <= x < 0.1    | 0.10 < x    |  79.7946    |
+|compactness_mean     | x < 0.06    | 0.06 <= x < 0.09    | 0.09 <= x < 0.12   | 0.12 < x    |  27.9530    |
+|symmetry_mean        | x < 0.16    | 0.16 <= x < 0.18    | 0.18 <= x < 0.20   | 0.20 < x    |  18.3689    |
+|radius_se            | x < 0.22    | 0.22 <= x < 0.33    | 0.33 <= x < 0.44   | 0.44 < x    |  4.7003     | 
+|texture_se           | x < 0.90    | 0.90 <= x < 1.20    | 1.20 <= x < 1.50   | 1.50 < x    | -1.4729     |
+|fractal_dimension_se | x < 0.002   | 0.002 <= x < 0.003  | 0.003 <= x < 0.004 | 0.004 < x   | -375.6956   |
+
+<br>
+
+> 예를 들어 radius_mean의 구간의 너비는 3입니다. 따라서 3에 계수 값인 1.0262을 곱한 후 10를 다시 곱해주고 일에 자리까지 반올림을 해줍니다.
+
+> $round(3 * 1.0262 * 10)$을 해주는 겁니다. 그 값이 class 1의 점수가 되고, class 2, 3, 4는 1씩 더해준 값이 됩니다.
+
+<br>
+
+|Variable             | 1    | 2     | 3    | 4    |
+|:--------------------|-----:|------:|-----:|-----:|
+|radius_mean          |  31  | 32    | 33   | 34   |
+|texture_mean         |  13  | 14    | 15   | 16   |
+|smoothness_mean      |  8   | 9     | 10   | 11   |
+|compactness_mean     |  4   | 5     | 6    | 7    |
+|symmetry_mean        |  84  | 85    | 86   | 87   |
+|radius_se            |  5   | 6     | 7    | 8    | 
+|texture_se           | -4   | -5    | -6   | -7   |
+|fractal_dimension_se | -4   | -5    | -6   | -7   |
+
+<br>
+
+```{r}
+# 각 변수에 대해 주어진 범위에 따라 클래스와 점수를 부여
+score_02_data <- selected_data %>%
+  mutate(radius_mean_score = ifelse(radius_mean <= 10, 31,
+                                    ifelse(radius_mean <= 13, 32,
+                                           ifelse(radius_mean <= 16, 33, 34))),
+
+         texture_mean_score = ifelse(texture_mean <= 16, 13,
+                                     ifelse(texture_mean <= 19, 14,
+                                            ifelse(texture_mean <= 22, 15, 16))),
+                        
+         smoothness_mean_score = ifelse(smoothness_mean <= 0.08, 8,
+                                        ifelse(smoothness_mean <= 0.09, 9,
+                                               ifelse(smoothness_mean <= 0.12, 10, 11))),
+
+         compactness_mean_score = ifelse(compactness_mean <= 0.06, 4,
+                                         ifelse(compactness_mean <= 0.09, 5,
+                                                ifelse(compactness_mean <= 16, 6, 7))),
+
+         symmetry_mean_score = ifelse(symmetry_mean <= 0.16, 84,
+                                      ifelse(symmetry_mean <= 0.18, 85,
+                                             ifelse(symmetry_mean <= 0.20, 86, 87))),
+
+         radius_se_score = ifelse(radius_se <= 0.22, 5,
+                                  ifelse(radius_se <= 0.33, 6,
+                                         ifelse(radius_se <= 0.44, 7, 8))),
+
+         texture_se_score = ifelse(texture_se <= 0.90, -4,
+                                   ifelse(texture_se <= 1.20, -5,
+                                          ifelse(texture_se <= 1.50, -6, -7))),
+
+         fractal_dimension_se_score = ifelse(fractal_dimension_se <= 0.002, -4,
+                                             ifelse(fractal_dimension_se <= 0.003, -5,
+                                                    ifelse(fractal_dimension_se <= 0.004, -6, -7))))
+
+
+# _score로 끝나는 모든 변수들의 합을 계산하여 score라는 새로운 열을 생성
+score_02_vars <- grep("_score$", names(score_02_data), value = TRUE)
+
+score_02_data <- score_02_data %>% mutate(score = rowSums(.[score_02_vars]))
+```
+
+```{r}
+group_B <- score_02_data$score[score_02_data$diagnosis == "B"]
+group_M <- score_02_data$score[score_02_data$diagnosis == "M"]
+
+# KS 통계량 계산
+ks_result_02 <- ks.test(group_B, group_M)
+
+# KS 통계량 출력
+print(ks_result_02$statistic)
+```
+
+```{r}
+# 누적 B/M 구성비 분포 그래프 그리기
+ggplot() +
+  stat_ecdf(data = data.frame(score = group_B, group = "B"), aes(score, colour = group)) +
+  stat_ecdf(data = data.frame(score = group_M, group = "M"), aes(score, colour = group)) +
+  labs(x = "Score", y = "Cumulative Proportion", 
+       title = "Cumulative Distribution Plot for Score",
+       subtitle = "Blue: Group B, Red: Group M")
+```
+
+```{r}
+# 'B'와 'M' 진단 그룹의 실제 라벨 생성
+actual <- ifelse(score_02_data$diagnosis == "B", 0, 1)
+
+# 예측 객체 생성
+pred <- prediction(score_02_data$score, actual)
+
+# ROC 곡선 계산
+roc_obj <- performance(pred, "tpr", "fpr")
+
+# AUROC 값 계산
+auc_obj <- performance(pred, "auc")
+
+# AUROC 값 출력
+print(auc_obj@y.values[[1]])
+```
+
+<br><br>
+
+#### 4-2-3. 3rd Scoring Model
+ 세 번째 평점표 모형은 두 번째 모형과 동일하게 계수와 구간의 너비를 곱하고, 10을 곱한 후 일의 자리까지 반올림한 것은 동일하지만, class가 증가할 때, 구간의 너비만큼 값을 더해주었습니다. 이는 2번째 모형보다 score의 분포를 퍼지게 하고 변수에 대한 가중치가 적절히 반영되도록 해주기 위함입니다.
+ 
+<br>
+
+> 2nd model: ith class = round(계수 * 구간너비 * 10) + 1 * (i-1)
+
+> 3rd model: ith class = round(계수 * 구간너비 * 10) + 3 * (i-1)
+
+<br>
+
+|Variable             | 1    | 2     | 3    | 4    |
+|:--------------------|-----:|------:|-----:|-----:|
+|radius_mean          |  31  | 34    | 37   | 40   |
+|texture_mean         |  13  | 16    | 19   | 22   |
+|smoothness_mean      |  8   | 9     | 10   | 11   |
+|compactness_mean     |  4   | 8     | 8    | 10   |
+|symmetry_mean        |  84  | 87    | 90   | 93   |
+|radius_se            |  5   | 6     | 7    | 8    | 
+|texture_se           | -4   | -5    | -6   | -7   |
+|fractal_dimension_se | -4   | -5    | -6   | -7   |
+
+<br>
+```{r}
+# 각 변수에 대해 주어진 범위에 따라 클래스와 점수를 부여
+score_3_data <- selected_data %>%
+  mutate(radius_mean_score = ifelse(radius_mean <= 10, 31,
+                                    ifelse(radius_mean <= 13, 34,
+                                           ifelse(radius_mean <= 16, 37, 40))),
+
+         texture_mean_score = ifelse(texture_mean <= 16, 13,
+                                     ifelse(texture_mean <= 19, 16,
+                                            ifelse(texture_mean <= 22, 19, 22))),
+                        
+         smoothness_mean_score = ifelse(smoothness_mean <= 0.08, 8,
+                                        ifelse(smoothness_mean <= 0.09, 9,
+                                               ifelse(smoothness_mean <= 0.12, 10, 11))),
+
+         compactness_mean_score = ifelse(compactness_mean <= 0.06, 4,
+                                         ifelse(compactness_mean <= 0.09, 6,
+                                                ifelse(compactness_mean <= 16, 8, 10))),
+
+         symmetry_mean_score = ifelse(symmetry_mean <= 0.16, 84,
+                                      ifelse(symmetry_mean <= 0.18, 87,
+                                             ifelse(symmetry_mean <= 0.20, 90, 93))),
+
+         radius_se_score = ifelse(radius_se <= 0.22, 5,
+                                  ifelse(radius_se <= 0.33, 6,
+                                         ifelse(radius_se <= 0.44, 7, 8))),
+
+         texture_se_score = ifelse(texture_se <= 0.90, -4,
+                                   ifelse(texture_se <= 1.20, -7,
+                                          ifelse(texture_se <= 1.50, -10, -13))),
+
+         fractal_dimension_se_score = ifelse(fractal_dimension_se <= 0.002, -4,
+                                             ifelse(fractal_dimension_se <= 0.003, -5,
+                                                    ifelse(fractal_dimension_se <= 0.004, -6, -7))))
+
+
+# _score로 끝나는 모든 변수들의 합을 계산하여 score라는 새로운 열을 생성
+score_03_vars <- grep("_score$", names(score_3_data), value = TRUE)
+
+score_3_data <- score_3_data %>% mutate(score = rowSums(.[score_03_vars]))
+```
+```{r}
+group_B <- score_3_data$score[score_3_data$diagnosis == "B"]
+group_M <- score_3_data$score[score_3_data$diagnosis == "M"]
+
+# KS 통계량 계산
+ks_result_03 <- ks.test(group_B, group_M)
+
+# KS 통계량 출력
+print(ks_result_03$statistic)
+```
+```{r}
+# 누적 B/M 구성비 분포 그래프 그리기
+ggplot() +
+  stat_ecdf(data = data.frame(score = group_B, group = "B"), aes(score, colour = group)) +
+  stat_ecdf(data = data.frame(score = group_M, group = "M"), aes(score, colour = group)) +
+  labs(x = "Score", y = "Cumulative Proportion", 
+       title = "Cumulative Distribution Plot for Score",
+       subtitle = "Blue: Group B, Red: Group M")
+```
+```{r}
+# 'B'와 'M' 진단 그룹의 실제 라벨 생성
+actual <- ifelse(score_3_data$diagnosis == "B", 0, 1)
+
+# 예측 객체 생성
+pred <- prediction(score_3_data$score, actual)
+
+# ROC 곡선 계산
+roc_obj <- performance(pred, "tpr", "fpr")
+
+# AUROC 값 계산
+auc_obj <- performance(pred, "auc")
+
+# AUROC 값 출력
+print(auc_obj@y.values[[1]])
+```
+
+
+> 3개의 스코어링 모델 중 먼저 2, 3번 모델의 AUROC, KS 통계량이 좋은 성능을 보이고 있고, 2번 모델의 경우 3번 모델보다 AUROC, KS 통계량이 더 좋습니다.
+
+> 그러나 일반적으로 KS 통계량이 너무 높으면 의심할 필요가 있다고 합니다. 2번 모델의 KS 통계량이 0.826251로 선택하기 안정적이지 않다고 판단했습니다.
+
+> 3번 모델은 KS 통계량이 0.751532이고, 누적분포를 2번과 3번 모델을 비교했을 때, 3번 모델이 더 score의 분포가 더 넓게 포진되어 있어서 조금 더 안정적이라 판단했습니다. 따라서 3번 모델을 스코어링 모델로 사용하기로 결정했습니다.
+
+<br><br>
+
+
+[Scorecard]
+
+|Variable             | range              | class  | score   |
+|:--------------------|-------------------:|-------:|--------:|
+|radius_mean          | x < 10             | 1      |  31     | 
+|radius_mean          | 10 <= x < 13       | 2      |  34     | 
+|radius_mean          | 13 <= x < 16       | 3      |  37     | 
+|radius_mean          | 16 <= x            | 4      |  40     |
+|texture_mean         | x < 16             | 1      |  13     | 
+|texture_mean         | 16 <= x < 19       | 2      |  16     | 
+|texture_mean         | 19 <= x < 22       | 3      |  19     | 
+|texture_mean         | 22 <=  x           | 4      |  22     |
+|smoothness_mean      | x < 0.08           | 1      |  8      | 
+|smoothness_mean      | 0.08 <= x < 0.09   | 2      |  9      | 
+|smoothness_mean      | 0.09 <= x < 0.12   | 3      |  10     | 
+|smoothness_mean      | 0.12 < x           | 4      |  11     |
+|compactness_mean     | x < 0.06           | 1      |  4      | 
+|compactness_mean     | 0.06 <= x < 0.09   | 2      |  6      | 
+|compactness_mean     | 0.09 <= x < 16     | 3      |  8      | 
+|compactness_mean     | 16 <= x            | 4      |  10     |
+|symmetry_mean        | x < 0.16           | 1      |  84     | 
+|symmetry_mean        | 0.16 <= x < 0.18   | 2      |  87     | 
+|symmetry_mean        | 0.18 <= x < 0.20   | 3      |  90     | 
+|symmetry_mean        | 0.20 <= x          | 4      |  93     |
+|radius_se            | x < 0.22           | 1      |  5      | 
+|radius_se            | 0.22 <= x < 0.33   | 2      |  6      | 
+|radius_se            | 0.33 <= x < 0.44   | 3      |  7      | 
+|radius_se            | 0.44 <= x          | 4      |  8      |
+|texture_se           | x < 0.90           | 1      | -4      | 
+|texture_se           | 0.90 <= x < 1.20   | 2      | -7      | 
+|texture_se           | 1.20 <= x < 1.50   | 3      | -10     | 
+|texture_se           | 1.50 <= x          | 4      | -13     |
+|fractal_dimension_se | x < 0.002          | 1      | -4      | 
+|fractal_dimension_se | 0.002 <= x < 0.003 | 2      | -5      | 
+|fractal_dimension_se | 0.003 <= x < 0.004 | 3      | -6      | 
+|fractal_dimension_se | 0.004 <= x         | 4      | -7      |
