@@ -1534,6 +1534,17 @@ library(gridExtra)</code></pre>
 </div>
 <div id="데이터-불러오기-및-확인" class="section level2">
 <h2>1. 데이터 불러오기 및 확인</h2>
+<ul>
+<li>데이터 출처
+<ul>
+<li><a href="https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic">UCI
+Machine Learning Repository - Breast Cancer Wisconsin
+(Diagnosis)</a></li>
+<li><a href="https://www.kaggle.com/datasets/uciml/breast-cancer-wisconsin-data">kaggle
+UCI MACHINE LEARNING - Breast Cancer Wisconsin (Diagnosis) Data
+set</a></li>
+</ul></li>
+</ul>
 <pre class="r"><code># 데이터 불러오기
 breast_cancer_data &lt;- read.csv(&quot;.//data//breast_cancer.csv&quot;)
 
@@ -1884,10 +1895,11 @@ worst 간에는 낮은 상관성을 보인다다.</p>
 <h3 class="unnumbered"></h3>
 <p><br></p>
 <blockquote>
-<p>mean과 worst 간의 상관계수는 대부분 0.8이상으로, 최소도 0.7이상으로
-높게 나왔으나, mean과 se, se와 worst 간의 상관계수는 중간 혹은 그 이하가
-나와 (mean se worst) 3가지 그룹 30개의 변수에서 (mean se) 2개의 그룹의
-변수만을 선택해서 진행하도록 하겠습니다.</p>
+<p>mean과 worst 간의 상관계수는 모두 0.7이상, 그 중 대부분이 0.8이상의
+높은 상관성을 보였습니다. 그러나 mean과 se, se와 worst 간의 상관계수는
+중간 혹은 그 이하의 상관성이 나와 (mean se worst) 3가지 그룹 30개의
+변수에서 (mean se) 2개의 그룹의 변수만을 선택해서 진행하도록
+하겠습니다.</p>
 </blockquote>
 <p><br></p>
 <pre class="r"><code>breast_cancer_data = subset(breast_cancer_data, select=c(1:22)) # worst 그룹을 제거</code></pre>
@@ -2364,9 +2376,9 @@ print(results)</code></pre>
 ## 3 backward    0.5 0.9415205 0.9917529 133.8223
 ## 4     both    0.5 0.9415205 0.9917529 133.8223</code></pre>
 <p><strong>Accuracy</strong>, <strong>AUROC</strong> 값은 모델 간의
-차이가 유의미하지 않아 <strong>AIC</strong> 가 낮은 model 중 backward를
-사용한 <span class="math inline">\(Logistic\ Regression\)</span> 모형을
-이용해서 평점표 모형을 개발하겠습니다.</p>
+차이가 유의미하지 않아 <strong>AIC</strong> 가 낮은 model 중
+__backward__를 사용한 <span class="math inline">\(Logistic\
+Regression\)</span> 모형을 이용해서 평점표 모형을 개발하겠습니다.</p>
 <p><br><br></p>
 </div>
 </div>
@@ -2814,11 +2826,11 @@ AUROC가 0.8470786이 나왔습니다. 그러나 만족스러운 수치는 아�
 <p><br></p>
 <table>
 <colgroup>
-<col width="22%" />
 <col width="20%" />
-<col width="19%" />
-<col width="18%" />
-<col width="17%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -2890,13 +2902,6 @@ AUROC가 0.8470786이 나왔습니다. 그러나 만족스러운 수치는 아�
 </table>
 <p><br></p>
 <table>
-<colgroup>
-<col width="30%" />
-<col width="19%" />
-<col width="16%" />
-<col width="16%" />
-<col width="17%" />
-</colgroup>
 <thead>
 <tr class="header">
 <th align="left">Variable</th>
@@ -3055,11 +3060,11 @@ print(auc_obj@y.values[[1]])</code></pre>
 (소수 첫번째까지 사용)</p>
 <table>
 <colgroup>
-<col width="22%" />
 <col width="20%" />
-<col width="19%" />
-<col width="18%" />
-<col width="17%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
+<col width="20%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -3131,14 +3136,6 @@ print(auc_obj@y.values[[1]])</code></pre>
 </table>
 <p><br></p>
 <table>
-<colgroup>
-<col width="25%" />
-<col width="16%" />
-<col width="13%" />
-<col width="13%" />
-<col width="15%" />
-<col width="15%" />
-</colgroup>
 <thead>
 <tr class="header">
 <th align="left">Variable</th>
@@ -3714,11 +3711,13 @@ Malignant(악성)인 환자 데이터를 넣어주었을때 Malignant를 출력�
 <h2>6. 요약 및 결론</h2>
 <p>데이터 전처리 과정을 통해서 30개의 변수에서 12개의 변수로 축소를
 시켰고, 이를 기반으로 Modeling을 진행했습니다.</p>
-<p>Modeling 부분에서는 로지스틱, 의사결정트리, 랜덤포레스트 3가지 모델을
-정확도와 ROC, AUC를 기반으로 로지스틱을 기반으로 스코어링 모델을
-개발한다는 판단을 했습니다.</p>
-<p>그 후 로지스틱 모델의 능력을 향상시키기 위해서 변수 선택을 2차적으로
-진행해서 8개의 변수로 한 번더 축소시켰습니다.</p>
+<p>Modeling 부분에서는 <span class="math inline">\(Logistic\
+Regression,\ Decision\ Tree,\ Random\ Forest\)</span> 3가지 모델을
+정확도와 <strong>ROC</strong>, __AUC__을 통해서 <span class="math inline">\(Logistic\ Model\)</span>을 기반으로 스코어링
+모델을 개발한다는 판단을 했습니다.</p>
+<p>그 후 <span class="math inline">\(Logistic\ Model\)</span>의 능력을
+향상시키기 위해서 변수 선택을 2차적으로 진행해서 8개의 변수로 한 번 더
+축소시켰습니다.</p>
 <p>최종 선택된 변수들을 토대로 각 변수에 대한 분포를 범주화해서
 스코어링했고, 3가지 모델 중에서 선택된 최종 스코어링 모델을 기반으로
 예측을 진행했습니다.</p>
