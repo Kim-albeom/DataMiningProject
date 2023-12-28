@@ -14,6 +14,6 @@ Breast Cancer Wisconsin(Diagnostic) Data set은 주사기로 종양에서 세포
 
 - Benign(양성) 환자
 <img src="https://github.com/BaekJunehong/DataMining_project/assets/101456289/2f82dbe4-2a04-4f0b-ba6c-feed1867bbb4" alt="image" width="800" height="400">
-
+<br>
 - Malignant(악성) 환자
 <img src="https://github.com/BaekJunehong/DataMining_project/assets/101456289/19182487-1d3c-475a-835d-dec69ceada13" alt="image" width="800" height="400">
