@@ -14,3 +14,7 @@ Breast Cancer Wisconsin(Diagnostic) Data set은 주사기로 종양에서 세포
 - EDA & Modeling 파트별 내용 공유
 ### 최종 제출(12.26)
 - EDA & Modeling 내용 종합 및 마무리작업
+
+## 3. 모델 적용 예시
+![image](https://github.com/BaekJunehong/DataMining_project/assets/101456289/2f82dbe4-2a04-4f0b-ba6c-feed1867bbb4)
+![image](https://github.com/BaekJunehong/DataMining_project/assets/101456289/19182487-1d3c-475a-835d-dec69ceada13)
