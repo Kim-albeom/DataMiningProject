@@ -12,6 +12,6 @@ Breast Cancer Wisconsin(Diagnostic) Data set은 주사기로 종양에서 세포
 
 ## 3. 모델 적용 예시
 
-<img src="https://github.com/BaekJunehong/DataMining_project/assets/101456289/2f82dbe4-2a04-4f0b-ba6c-feed1867bbb4" alt="image" width="900" height="400">
+<img src="https://github.com/BaekJunehong/DataMining_project/assets/101456289/2f82dbe4-2a04-4f0b-ba6c-feed1867bbb4" alt="image" width="800" height="400">
 
-<img src="https://github.com/BaekJunehong/DataMining_project/assets/101456289/19182487-1d3c-475a-835d-dec69ceada13" alt="image" width="900" height="400">
+<img src="https://github.com/BaekJunehong/DataMining_project/assets/101456289/19182487-1d3c-475a-835d-dec69ceada13" alt="image" width="800" height="400">
